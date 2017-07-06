@@ -30,6 +30,7 @@ def get_the_data():
     with tf.name_scope('input'):
         # Load triples from triple_file TSV
         reader = tf.TextLineReader()
+        # TODO: sample triples
         filename_queue = tf.train.string_input_producer([corrupt_triple_file] * FLAGS.num_epochs)
         key, value = reader.read(filename_queue)
 
@@ -54,56 +55,56 @@ def corrupt_triple(entity_count, relation_count, triple):
 
 def circular_correlation(h, t):
     if FLAGS.cpu:
-        # For prototyping only, L = tanh(relation * (tail - head)^T)
-        return t - h
+        # For prototyping only, L = tanh(relation * (head - tail)^T)
+        # In other words, minimize (head -> tail) being anti-parallel to relation
+        return h - t
 
     # these ops are GPU only!
     return tf.ifft(tf.multiply(tf.conj(tf.fft(h)), tf.fft(t)))
 
 
 def init_embedding(projector_config, name, entity_count, embedding_dim):
-    # TODO: experiment with initializers (xavier)
-    embedding = tf.Variable(tf.random_uniform([entity_count, embedding_dim], -1.0, 1.0), name=name)
+    embedding = tf.get_variable(name, [entity_count, 2 * embedding_dim], initializer=tf.random_normal_initializer)
 
     embeddings_config = projector_config.embeddings.add()
     embeddings_config.tensor_name = name
-    # TODO: verify whether this file should have a header
-    embeddings_config.metadata_path = 'diffbot_data/entity_ids.txt'
 
     return embedding
 
 
-def get_embedding(layer_name, entity_id, embeddings_real, embeddings_imag):
-    return tf.complex(tf.nn.embedding_lookup(embeddings_real, entity_id, max_norm=1.),
-                      tf.nn.embedding_lookup(embeddings_imag, entity_id, max_norm=1.),
+def get_embedding(layer_name, entity_ids, embeddings, embedding_dim):
+    entity_embeddings = tf.nn.embedding_lookup(embeddings, entity_ids, max_norm=1)
+    reshaped = tf.reshape(entity_embeddings, [-1, 2 * embedding_dim])
+    return tf.complex(tf.slice(reshaped, [0, 0], [-1, embedding_dim]),
+                      tf.slice(reshaped, [0, embedding_dim], [-1, embedding_dim]),
                       name=layer_name)
 
 
-def complex_sigmoid(complex_tensor):
-    mag = tf.abs(tf.real(complex_tensor)) + tf.abs(tf.imag(complex_tensor))
-    return tf.tanh(mag)
+def complex_tanh(complex_tensor):
+    summed = tf.reduce_sum(tf.real(complex_tensor) + tf.imag(complex_tensor), 1)
+    return tf.tanh(summed)
 
 
-def evaluate_triples(triple_batch, real_embeddings, imag_embeddings, relation_count, corrupt=False):
+def evaluate_triples(triple_batch, embeddings, embedding_dim, relation_count, corrupt=False):
     # Load embeddings
     index_offset = 3 if corrupt else 0
     pos_h = tf.slice(triple_batch, [0, index_offset], [-1, 1], name='h_id') + relation_count
-    head = get_embedding('h', pos_h, real_embeddings, imag_embeddings)
+    head = get_embedding('h', pos_h, embeddings, embedding_dim)
     pos_t = tf.slice(triple_batch, [0, index_offset + 1], [-1, 1], name='t_id') + relation_count
-    tail = get_embedding('t', pos_t, real_embeddings, imag_embeddings)
+    tail = get_embedding('t', pos_t, embeddings, embedding_dim)
     pos_r = tf.slice(triple_batch, [0, index_offset + 2], [-1, 1], name='r_id')
-    relation = get_embedding('r', pos_r, real_embeddings, imag_embeddings)
+    relation = get_embedding('r', pos_r, embeddings, embedding_dim)
 
     # Compute loss
-    with tf.name_scope('loss'):
-        train_loss = complex_sigmoid(tf.matmul(relation,
-                                               circular_correlation(head, tail),
-                                               transpose_b=True))
-        variable_summaries(train_loss)
-        train_loss_scalar = tf.reduce_sum(train_loss)
-        tf.summary.scalar('total', train_loss_scalar)
+    with tf.name_scope('eval'):
+        loss = complex_tanh(tf.matmul(relation,
+                                      circular_correlation(head, tail),
+                                      transpose_b=True))
+        variable_summaries(loss)
+        loss_scalar = tf.reduce_sum(loss)
+        tf.summary.scalar('total', loss_scalar)
 
-        return train_loss
+        return loss
 
 
 def variable_summaries(var):
@@ -127,7 +128,7 @@ def run_training(entity_count, relation_count, triple_count, triples):
     batch_count = triple_count / batch_size
 
     # Warning: this will clobber existing summaries
-    if not FLAGS.resume_checkpoint:
+    if not FLAGS.resume_checkpoint and os.path.isdir(FLAGS.output_dir):
         shutil.rmtree(FLAGS.output_dir)
     try:
         os.makedirs(FLAGS.output_dir)
@@ -137,8 +138,7 @@ def run_training(entity_count, relation_count, triple_count, triples):
 
     # Initialize embeddings (TF doesn't support complex embeddings, split real part and imaginary part)
     projector_config = projector.ProjectorConfig()
-    real_embeddings = init_embedding(projector_config, 'embeddings_real', entity_count, embedding_dim/2)
-    imag_embeddings = init_embedding(projector_config, 'embeddings_imag', entity_count, embedding_dim / 2)
+    embeddings = init_embedding(projector_config, 'embeddings', entity_count, embedding_dim)
 
     with tf.name_scope('batch'):
         # Sample triples
@@ -150,20 +150,22 @@ def run_training(entity_count, relation_count, triple_count, triples):
 
         # Evaluate triples
         with tf.name_scope('train'):
-            train_loss = evaluate_triples(triple_batch, real_embeddings, imag_embeddings, relation_count)
+            train_loss = evaluate_triples(triple_batch, embeddings, embedding_dim, relation_count)
         with (tf.name_scope('corrupt')):
-            corrupt_loss = evaluate_triples(triple_batch, real_embeddings, imag_embeddings,
+            corrupt_loss = evaluate_triples(triple_batch, embeddings, embedding_dim,
                                             relation_count, corrupt=True)
 
         # Score and minimize hinge-loss
-        loss = tf.reduce_sum(tf.maximum(train_loss - corrupt_loss + margin, 0))
-        tf.summary.scalar('loss', loss)
-        # TODO: experiment with optimizers
+        loss = tf.maximum(train_loss - corrupt_loss + margin, 0)
+        # TODO: experiment with other optimizers
         optimizer = tf.train.GradientDescentOptimizer(learning_rate).minimize(loss)
 
+        # Log the total batch loss
+        total_loss = tf.reduce_sum(loss)
+        tf.summary.scalar('loss', total_loss)
+
     # Save embeddings
-    saver = tf.train.Saver({'checkpoint_embeddings_real': real_embeddings,
-                            'checkpoint_embeddings_imag': imag_embeddings})
+    saver = tf.train.Saver({'embeddings': embeddings})
 
     with tf.Session() as sess:
         summaries = tf.summary.merge_all()
@@ -190,20 +192,19 @@ def run_training(entity_count, relation_count, triple_count, triples):
                     if batch % 1000 == 0:
                         run_options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
                         run_metadata = tf.RunMetadata()
-                        _, current_loss, summary = sess.run([optimizer, loss, summaries],
-                                                            options=run_options,
-                                                            run_metadata=run_metadata)
+                        _, batch_loss, summary = sess.run([optimizer, total_loss, summaries],
+                                                          options=run_options,
+                                                          run_metadata=run_metadata)
                         step = '{}-{}'.format(epoch, batch)
                         summary_writer.add_run_metadata(run_metadata, step)
                         summary_writer.add_summary(summary)
                         print "\tSaved summary for step " + step
                     else:
-                        _, current_loss = sess.run([optimizer, loss])
+                        _, batch_loss = sess.run([optimizer, total_loss])
 
                 # Checkpoint
                 save_path = saver.save(sess, FLAGS.output_dir + '/model.ckpt', epoch)
-                print('Epoch {} Loss: {}'.format(epoch, current_loss))
-                print('\tModel saved in ' + save_path)
+                print('Epoch {} Loss: {} (Model saved as {})'.format(epoch, batch_loss, save_path))
 
         except tf.errors.OutOfRangeError:
             print('Done training -- epoch limit reached')
