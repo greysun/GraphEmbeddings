@@ -9,6 +9,7 @@ import os
 import shutil
 import sys
 
+import numpy as np
 import tensorflow as tf
 from tensorflow.contrib.tensorboard.plugins import projector
 
@@ -17,9 +18,9 @@ FLAGS = None
 
 
 def get_the_data():
-    entity_file = 'diffbot_data/entity_ids.txt'
+    entity_file = 'diffbot_data/entity_metadata.tsv'
     relation_file = 'diffbot_data/relation_ids.txt'
-    corrupt_triple_file = 'diffbot_data/corrupt_triples.txt'
+    corrupt_triple_file = 'diffbot_data/triples.txt'
 
     # TODO: Build entity type dict and generate new type-safe corrupt triples each epoch
 
@@ -30,27 +31,55 @@ def get_the_data():
     with tf.name_scope('input'):
         # Load triples from triple_file TSV
         reader = tf.TextLineReader()
-        # TODO: sample triples
         filename_queue = tf.train.string_input_producer([corrupt_triple_file] * FLAGS.num_epochs)
         key, value = reader.read(filename_queue)
 
         column_defaults = [tf.constant([], dtype=tf.int32),
                            tf.constant([], dtype=tf.int32),
-                           tf.constant([], dtype=tf.int32),
-                           tf.constant([], dtype=tf.int32),
-                           tf.constant([], dtype=tf.int32),
                            tf.constant([], dtype=tf.int32)]
 
-        head_ids, tail_ids, relation_ids, corrupt_head_ids, corrupt_tail_ids, corrupt_relation_ids = \
-            tf.decode_csv(value, column_defaults, field_delim='\t')
-        triples = tf.stack([head_ids, tail_ids, relation_ids, corrupt_head_ids, corrupt_tail_ids, corrupt_relation_ids])
+        head_ids, tail_ids, relation_ids = tf.decode_csv(value, column_defaults, field_delim='\t')
+        triples = tf.stack([head_ids, tail_ids, relation_ids])
 
         return entity_count, relation_count, triple_count, triples
 
 
-def corrupt_triple(entity_count, relation_count, triple):
+def corrupt_heads(entity_count, triples):
     # TODO lookup entityIds by type
-    raise NotImplementedError
+    tail_column = tf.slice(triples, [0, 1], [-1, 1])
+    relation_column = tf.slice(triples, [0, 2], [-1, 1])
+    corrupt_head_column = tf.random_uniform([FLAGS.batch_size, 1], maxval=entity_count-1, dtype=tf.int32)
+    concat = tf.concat([corrupt_head_column, tail_column, relation_column], 1)
+    return concat
+
+
+def corrupt_tails(entity_count, triples):
+    # TODO lookup entityIds by type
+    head_column = tf.slice(triples, [0, 0], [-1, 1])
+    relation_column = tf.slice(triples, [0, 2], [-1, 1])
+    corrupt_tail_column = tf.random_uniform([FLAGS.batch_size, 1], maxval=entity_count-1, dtype=tf.int32)
+    concat = tf.concat([head_column, corrupt_tail_column, relation_column], 1)
+    return concat
+
+
+def corrupt_entities(entity_count, triples):
+    should_corrupt_heads = tf.less(tf.random_uniform([], 0, 1.0), .5)
+    return tf.cond(should_corrupt_heads,
+                   lambda: corrupt_heads(entity_count, triples),
+                   lambda: corrupt_tails(entity_count, triples))
+
+
+def corrupt_relations(relation_count, triples):
+    entity_columns = tf.slice(triples, [0, 0], [-1, 2])
+    corrupt_relation_column = tf.random_uniform([FLAGS.batch_size, 1], maxval=relation_count-1, dtype=tf.int32)
+    return tf.concat([entity_columns, corrupt_relation_column], 1)
+
+
+def corrupt_batch(entity_count, relation_count, triples):
+    should_corrupt_relation = tf.less(tf.random_uniform([], 0, 1.0), .5)
+    return tf.cond(should_corrupt_relation,
+                   lambda: corrupt_relations(relation_count, triples),
+                   lambda: corrupt_entities(entity_count, triples))
 
 
 def circular_correlation(h, t):
@@ -63,8 +92,9 @@ def circular_correlation(h, t):
     return tf.ifft(tf.multiply(tf.conj(tf.fft(h)), tf.fft(t)))
 
 
-def init_embedding(projector_config, name, entity_count, embedding_dim):
-    embedding = tf.get_variable(name, [entity_count, 2 * embedding_dim], initializer=tf.random_normal_initializer)
+def init_embedding(projector_config, name, relation_count, entity_count, embedding_dim):
+    embedding = tf.get_variable(name, [relation_count + entity_count, 2 * embedding_dim],
+                                initializer=tf.random_normal_initializer)
 
     embeddings_config = projector_config.embeddings.add()
     embeddings_config.tensor_name = name
@@ -85,14 +115,13 @@ def complex_tanh(complex_tensor):
     return tf.tanh(summed)
 
 
-def evaluate_triples(triple_batch, embeddings, embedding_dim, relation_count, corrupt=False):
+def evaluate_triples(triple_batch, embeddings, embedding_dim, relation_count):
     # Load embeddings
-    index_offset = 3 if corrupt else 0
-    pos_h = tf.slice(triple_batch, [0, index_offset], [-1, 1], name='h_id') + relation_count
+    pos_h = tf.slice(triple_batch, [0, 0], [-1, 1], name='h_id') + relation_count
     head = get_embedding('h', pos_h, embeddings, embedding_dim)
-    pos_t = tf.slice(triple_batch, [0, index_offset + 1], [-1, 1], name='t_id') + relation_count
+    pos_t = tf.slice(triple_batch, [0, 1], [-1, 1], name='t_id') + relation_count
     tail = get_embedding('t', pos_t, embeddings, embedding_dim)
-    pos_r = tf.slice(triple_batch, [0, index_offset + 2], [-1, 1], name='r_id')
+    pos_r = tf.slice(triple_batch, [0, 2], [-1, 1], name='r_id')
     relation = get_embedding('r', pos_r, embeddings, embedding_dim)
 
     # Compute loss
@@ -138,7 +167,7 @@ def run_training(entity_count, relation_count, triple_count, triples):
 
     # Initialize embeddings (TF doesn't support complex embeddings, split real part and imaginary part)
     projector_config = projector.ProjectorConfig()
-    embeddings = init_embedding(projector_config, 'embeddings', entity_count, embedding_dim)
+    embeddings = init_embedding(projector_config, 'embeddings', relation_count, entity_count, embedding_dim)
 
     with tf.name_scope('batch'):
         # Sample triples
@@ -152,13 +181,13 @@ def run_training(entity_count, relation_count, triple_count, triples):
         with tf.name_scope('train'):
             train_loss = evaluate_triples(triple_batch, embeddings, embedding_dim, relation_count)
         with (tf.name_scope('corrupt')):
-            corrupt_loss = evaluate_triples(triple_batch, embeddings, embedding_dim,
-                                            relation_count, corrupt=True)
+            corrupt_triples = corrupt_batch(entity_count, relation_count, triple_batch)
+            corrupt_loss = evaluate_triples(corrupt_triples, embeddings, embedding_dim, relation_count)
 
         # Score and minimize hinge-loss
         loss = tf.maximum(train_loss - corrupt_loss + margin, 0)
         # TODO: experiment with other optimizers
-        optimizer = tf.train.GradientDescentOptimizer(learning_rate).minimize(loss)
+        optimizer = tf.train.AdamOptimizer(learning_rate).minimize(loss)
 
         # Log the total batch loss
         total_loss = tf.reduce_sum(loss)
@@ -187,6 +216,7 @@ def run_training(entity_count, relation_count, triple_count, triples):
             epoch = 0
             while not coord.should_stop():
                 epoch += 1
+                batch_losses = []
                 for batch in range(1, batch_count):
                     # Train and log batch to summary_writer
                     if batch % 1000 == 0:
@@ -201,10 +231,11 @@ def run_training(entity_count, relation_count, triple_count, triples):
                         print "\tSaved summary for step " + step
                     else:
                         _, batch_loss = sess.run([optimizer, total_loss])
+                    batch_losses.append(batch_loss)
 
                 # Checkpoint
                 save_path = saver.save(sess, FLAGS.output_dir + '/model.ckpt', epoch)
-                print('Epoch {} Loss: {} (Model saved as {})'.format(epoch, batch_loss, save_path))
+                print('Epoch {} Loss: {} (Model saved as {})'.format(epoch, np.mean(batch_losses), save_path))
 
         except tf.errors.OutOfRangeError:
             print('Done training -- epoch limit reached')
