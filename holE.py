@@ -6,11 +6,13 @@ See https://arxiv.org/pdf/1510.04935.pdf
 import argparse
 import errno
 import os
+import random
 import shutil
 import sys
 
 import numpy as np
 import tensorflow as tf
+from collections import defaultdict
 from tensorflow.contrib.tensorboard.plugins import projector
 from tensorflow.python import debug as tf_debug
 
@@ -18,15 +20,66 @@ from tensorflow.python import debug as tf_debug
 FLAGS = None
 
 
+def init_table(dictionary, key_dtype, value_dtype, name, pad_int=False):
+    """Initializes the table variable and all of the inputs as constants."""
+    padded_size = FLAGS.padded_size
+
+    constants = []
+    if pad_int:
+        padded_size = FLAGS.padded_size
+        for k, v in dictionary.iteritems():
+            key = tf.constant(k, key_dtype)
+            v = [random.choice(v) for _ in range(padded_size)]
+            value = tf.constant(v, value_dtype)
+            constants.append((key, value))
+    else:
+        key = tf.constant(dictionary.keys(), key_dtype)
+        value = tf.constant(dictionary.values(), value_dtype)
+        constants.append((key, value))
+
+    if pad_int:
+        default_value = tf.constant(padded_size * [-1], value_dtype)
+    else:
+        default_value = tf.constant('?', value_dtype)
+
+    table = tf.contrib.lookup.MutableHashTable(key_dtype=key_dtype, value_dtype=value_dtype,
+                                               default_value=default_value, shared_name=name, name=name)
+    return table, constants
+
+
+def populate_table(constants, table):
+    for key, value in constants:
+        table.insert(key, value).run()
+
+
 def get_the_data():
     entity_file = 'diffbot_data/entity_metadata.tsv'
     relation_file = 'diffbot_data/relation_ids.txt'
     corrupt_triple_file = 'diffbot_data/triples.txt'
 
-    entity_count = sum(1 for line in open(entity_file))
+    type_to_ids = defaultdict(list)
+    id_to_type = defaultdict(list)
+
     relation_count = sum(1 for line in open(relation_file))
     triple_count = sum(1 for line in open(corrupt_triple_file))
-    print "Entities: ", entity_count, "Relations: ", relation_count, "Triples: ", triple_count
+
+    entity_count = 0
+    with open(entity_file, 'r') as f:
+        next(f)  # skip header
+        for line in f:
+            entity_count += 1
+            diffbot_id, index = line.split('\t')
+            type_char = diffbot_id[0]
+            index = int(index)
+            type_to_ids[type_char].append(index)
+            id_to_type[index] = type_char
+
+    print 'Entities: ', entity_count, 'Relations: ', relation_count, 'Triples: ', triple_count
+    print 'Types: ', {k: len(v) for k, v in type_to_ids.iteritems()}
+
+    # Wow fuck this API
+    type_to_ids_table, type_to_ids_constants = init_table(type_to_ids, tf.string, tf.int64, 'type_to_ids', pad_int=True)
+    id_to_type_table, id_to_type_constants = init_table(id_to_type, tf.int64, tf.string, 'id_to_type')
 
     with tf.name_scope('input'):
         # Load triples from triple_file TSV
@@ -41,45 +94,58 @@ def get_the_data():
         head_ids, tail_ids, relation_ids = tf.decode_csv(value, column_defaults, field_delim='\t')
         triples = tf.stack([head_ids, tail_ids, relation_ids])
 
-        return entity_count, relation_count, triple_count, triples
+    return type_to_ids_table, id_to_type_table, type_to_ids_constants, id_to_type_constants,\
+        entity_count, relation_count, triple_count, triples
 
 
-def corrupt_heads(entity_count, relation_count, triples):
-    # TODO lookup entityIds by type
-    tail_column = tf.slice(triples, [0, 1], [-1, 1])
-    relation_column = tf.slice(triples, [0, 2], [-1, 1])
-    corrupt_head_column = tf.random_uniform([FLAGS.batch_size, 1], maxval=entity_count-relation_count, dtype=tf.int32)
-    concat = tf.concat([corrupt_head_column, tail_column, relation_column], 1)
-    return concat
+def corrupt_heads(type_to_ids, id_to_type, triples):
+    with tf.name_scope('head'):
+        head_column = tf.cast(tf.slice(triples, [0, 0], [-1, 1]), tf.int64)
+        tail_column = tf.slice(triples, [0, 1], [-1, 1])
+        relation_column = tf.slice(triples, [0, 2], [-1, 1])
+
+        head_types = id_to_type.lookup(head_column)
+        type_ids = tf.reshape(type_to_ids.lookup(head_types), [FLAGS.batch_size, FLAGS.padded_size])
+        corrupt_head_column = tf.random_crop(type_ids, [FLAGS.batch_size, 1])
+        concat = tf.concat([tf.cast(corrupt_head_column, tf.int32), tail_column, relation_column], 1)
+        return concat
 
 
-def corrupt_tails(entity_count, relation_count, triples):
-    # TODO lookup entityIds by type
-    head_column = tf.slice(triples, [0, 0], [-1, 1])
-    relation_column = tf.slice(triples, [0, 2], [-1, 1])
-    corrupt_tail_column = tf.random_uniform([FLAGS.batch_size, 1], maxval=entity_count-relation_count, dtype=tf.int32)
-    concat = tf.concat([head_column, corrupt_tail_column, relation_column], 1)
-    return concat
+def corrupt_tails(type_to_ids, id_to_type, triples):
+    with tf.name_scope('tail'):
+        head_column = tf.slice(triples, [0, 0], [-1, 1])
+        tail_column = tf.cast(tf.slice(triples, [0, 1], [-1, 1]), tf.int64)
+        relation_column = tf.slice(triples, [0, 2], [-1, 1])
+
+        tail_types = id_to_type.lookup(tail_column, name='types')
+        type_ids = type_to_ids.lookup(tail_types, name='type_ids')
+        reshaped = tf.reshape(type_ids, [FLAGS.batch_size, FLAGS.padded_size], name='reshaped')
+        corrupt_tail_column = tf.random_crop(reshaped, [FLAGS.batch_size, 1], name='final_column')
+        concat = tf.concat([head_column, tf.cast(corrupt_tail_column, tf.int32), relation_column], 1)
+        return concat
 
 
-def corrupt_entities(entity_count, relation_count, triples):
-    should_corrupt_heads = tf.less(tf.random_uniform([], 0, 1.0), .5)
+def corrupt_entities(type_to_ids, id_to_type, triples):
+    should_corrupt_heads = tf.less(tf.random_uniform([], 0, 1.0), 0.5)
     return tf.cond(should_corrupt_heads,
-                   lambda: corrupt_heads(entity_count, relation_count, triples),
-                   lambda: corrupt_tails(entity_count, relation_count, triples))
+                   lambda: corrupt_heads(type_to_ids, id_to_type, triples),
+                   lambda: corrupt_tails(type_to_ids, id_to_type, triples))
 
 
 def corrupt_relations(relation_count, triples):
-    entity_columns = tf.slice(triples, [0, 0], [-1, 2])
-    corrupt_relation_column = tf.random_uniform([FLAGS.batch_size, 1], maxval=relation_count, dtype=tf.int32)
-    return tf.concat([entity_columns, corrupt_relation_column], 1)
+    with tf.name_scope('relation'):
+        entity_columns = tf.slice(triples, [0, 0], [-1, 2])
+        corrupt_relation_column = tf.random_uniform([FLAGS.batch_size, 1],
+                                                    maxval=relation_count,
+                                                    dtype=tf.int32)
+        return tf.concat([entity_columns, corrupt_relation_column], 1)
 
 
-def corrupt_batch(entity_count, relation_count, triples):
-    should_corrupt_relation = tf.less(tf.random_uniform([], 0, 1.0), .5)
+def corrupt_batch(type_to_ids, id_to_type, relation_count, triples):
+    should_corrupt_relation = tf.less(tf.random_uniform([], 0, 1.0), 0.5)
     return tf.cond(should_corrupt_relation,
                    lambda: corrupt_relations(relation_count, triples),
-                   lambda: corrupt_entities(entity_count, relation_count, triples))
+                   lambda: corrupt_entities(type_to_ids, id_to_type, triples))
 
 
 def circular_correlation(h, t):
@@ -150,7 +216,8 @@ def variable_summaries(var):
         tf.summary.histogram('histogram', var)
 
 
-def run_training(entity_count, relation_count, triple_count, triples):
+def run_training(type_to_ids_table, id_to_type_table, type_to_ids_constants, id_to_type_constants,
+                 entity_count, relation_count, triple_count, triples):
     # Initialize parameters
     margin = FLAGS.margin
     embedding_dim = FLAGS.embedding_dim
@@ -184,7 +251,7 @@ def run_training(entity_count, relation_count, triple_count, triples):
         with tf.name_scope('train'):
             train_loss = evaluate_triples(triple_batch, embeddings, embedding_dim, relation_count)
         with (tf.name_scope('corrupt')):
-            corrupt_triples = corrupt_batch(entity_count, relation_count, triple_batch)
+            corrupt_triples = corrupt_batch(type_to_ids_table, id_to_type_table, relation_count, triple_batch)
             corrupt_loss = evaluate_triples(corrupt_triples, embeddings, embedding_dim, relation_count)
 
         # Score and minimize hinge-loss
@@ -197,32 +264,39 @@ def run_training(entity_count, relation_count, triple_count, triples):
         tf.summary.scalar('loss', total_loss)
 
     summaries = tf.summary.merge_all()
-    init_op = tf.global_variables_initializer()
 
     # Save embeddings
     saver = tf.train.Saver({'embeddings': embeddings})
 
-    supervisor = tf.train.Supervisor(logdir=FLAGS.output_dir)
-    with supervisor.managed_session() as sess:
+    # TODO: supervisor freezes graph -- need to populate table inside session
+    # supervisor = tf.train.Supervisor(logdir=FLAGS.output_dir)
+    # with supervisor.managed_session() as sess:
+    with tf.Session() as sess:
         if FLAGS.debug:
             sess = tf_debug.LocalCLIDebugWrapperSession(sess)
             sess.add_tensor_filter("has_inf_or_nan", tf_debug.has_inf_or_nan)
 
-        summary_writer = tf.summary.FileWriter(FLAGS.output_dir + '/graph', sess.graph)
-        projector.visualize_embeddings(summary_writer, projector_config)
+        populate_table(id_to_type_constants, id_to_type_table)
+        populate_table(type_to_ids_constants, type_to_ids_table)
+
+        init_op = tf.global_variables_initializer()
+        sess.run(init_op)
 
         # Load the previous model if resume_checkpoint=True
-        sess.run(init_op)
         if FLAGS.resume_checkpoint:
             saver.restore(sess, FLAGS.output_dir + '/model.ckpt')
             # TODO: continue counting from last epoch
+
+        summary_writer = tf.summary.FileWriter(FLAGS.output_dir + '/graph', sess.graph)
+        projector.visualize_embeddings(summary_writer, projector_config)
 
         coord = tf.train.Coordinator()
         threads = tf.train.start_queue_runners(sess=sess, coord=coord)
 
         try:
             epoch = 0
-            while not supervisor.should_stop():
+            # while not supervisor.should_stop():
+            while True:
                 epoch += 1
                 batch_losses = []
                 for batch in range(1, batch_count):
@@ -235,7 +309,7 @@ def run_training(entity_count, relation_count, triple_count, triples):
                                                           run_metadata=run_metadata)
                         step = '{}-{}'.format(epoch, batch)
                         summary_writer.add_run_metadata(run_metadata, step)
-                        supervisor.summary_computed(sess, summary)
+                        # supervisor.summary_computed(sess, summary)
                         print "\tSaved summary for step " + step
                     else:
                         _, batch_loss = sess.run([optimizer, total_loss])
@@ -253,9 +327,31 @@ def run_training(entity_count, relation_count, triple_count, triples):
         coord.join(threads)
 
 
+def infer_triples(entity_count, relation_count, inference_pairs=None):
+    embedding_dim = FLAGS.embedding_dim
+    batch_size = FLAGS.batch_size
+
+    projector_config = projector.ProjectorConfig()
+    embeddings = init_embedding(projector_config, 'embeddings', entity_count, embedding_dim)
+
+    tf.train.batch(inference_pairs, batch_size)
+
+    #with tf.name_scope('eval'):
+    #    eval_loss = evaluate_triples(head_relation_batch, embeddings, embedding_dim, relation_count)
+
+    saver = tf.train.Saver({'embeddings': embeddings})
+
+    init_op = tf.global_variables_initializer()
+
+
 def main(_):
-    entity_count, relation_count, triple_count, triples = get_the_data()
-    run_training(entity_count, relation_count, triple_count, triples)
+    type_to_ids_table, id_to_type_table, type_to_ids_constants, id_to_type_constants, \
+        entity_count, relation_count, triple_count, triples = get_the_data()
+    if FLAGS.infer:
+        infer_triples(entity_count, relation_count)
+    else:
+        run_training(type_to_ids_table, id_to_type_table, type_to_ids_constants, id_to_type_constants,
+                     entity_count, relation_count, triple_count, triples)
 
 
 if __name__ == '__main__':
@@ -296,6 +392,12 @@ if __name__ == '__main__':
         help='Hinge loss margin.'
     )
     parser.add_argument(
+        '--padded_size',
+        type=int,
+        default=100000,
+        help='The maximum number of entities to use for each type while sampling corrupt triples.'
+    )
+    parser.add_argument(
         '--output_dir',
         type=str,
         default='holE',
@@ -316,6 +418,11 @@ if __name__ == '__main__':
         '--debug',
         action='store_true',
         help='Run with interactive Tensorflow debugger.'
+    )
+    parser.add_argument(
+        '--infer',
+        action='store_true',
+        help='Infer new triples from the latest checkpoint model.'
     )
 
     FLAGS, unparsed = parser.parse_known_args()
