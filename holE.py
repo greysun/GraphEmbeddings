@@ -185,9 +185,9 @@ def complex_tanh(complex_tensor):
 
 def evaluate_triples(triple_batch, embeddings, embedding_dim, relation_count):
     # Load embeddings
-    pos_h = tf.slice(triple_batch, [0, 0], [-1, 1], name='h_id') + relation_count
+    pos_h = tf.slice(triple_batch, [0, 0], [-1, 1], name='h_id')
     head = get_embedding('h', pos_h, embeddings, embedding_dim)
-    pos_t = tf.slice(triple_batch, [0, 1], [-1, 1], name='t_id') + relation_count
+    pos_t = tf.slice(triple_batch, [0, 1], [-1, 1], name='t_id')
     tail = get_embedding('t', pos_t, embeddings, embedding_dim)
     pos_r = tf.slice(triple_batch, [0, 2], [-1, 1], name='r_id')
     relation = get_embedding('r', pos_r, embeddings, embedding_dim)
