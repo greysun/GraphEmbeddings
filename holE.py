@@ -99,6 +99,7 @@ def get_the_data():
 
 
 def corrupt_heads(type_to_ids, id_to_type, triples):
+    # TODO: need to avoid type-safety for relation 'instance_of'
     with tf.name_scope('head'):
         head_column = tf.cast(tf.slice(triples, [0, 0], [-1, 1]), tf.int64)
         tail_column = tf.slice(triples, [0, 1], [-1, 1])
@@ -155,8 +156,7 @@ def circular_correlation(h, t):
         return h - t
 
     # these ops are GPU only!
-    with tf.device('/gpu:0'):
-        return tf.ifft(tf.multiply(tf.conj(tf.fft(h)), tf.fft(t)))
+    return tf.ifft(tf.multiply(tf.conj(tf.fft(h)), tf.fft(t)))
 
 
 def init_embedding(projector_config, name, entity_count, embedding_dim):
