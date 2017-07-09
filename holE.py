@@ -77,7 +77,6 @@ def get_the_data():
     print 'Entities: ', entity_count, 'Relations: ', relation_count, 'Triples: ', triple_count
     print 'Types: ', {k: len(v) for k, v in type_to_ids.iteritems()}
 
-    # Wow fuck this API
     type_to_ids_table, type_to_ids_constants = init_table(type_to_ids, tf.string, tf.int64, 'type_to_ids', pad_int=True)
     id_to_type_table, id_to_type_constants = init_table(id_to_type, tf.int64, tf.string, 'id_to_type')
 
