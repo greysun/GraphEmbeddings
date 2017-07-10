@@ -75,7 +75,7 @@ def get_the_data():
             type_to_ids[type_char].append(index)
             id_to_type[index] = type_char
 
-    print 'Entities: ', entity_count, 'Relations: ', relation_count, 'Triples: ', triple_count
+    print 'Entities: ', entity_count - relation_count, 'Relations: ', relation_count, 'Triples: ', triple_count
     print 'Types: ', {k: len(v) for k, v in type_to_ids.iteritems()}
 
     with tf.name_scope('init_type_to_ids'):
@@ -312,7 +312,7 @@ def run_training(type_to_ids_table, id_to_type_table, type_to_ids_constants, id_
                 batch_losses = []
                 for batch in range(1, batch_count):
                     # Train and log batch to summary_writer
-                    if batch % 1000 == 0:
+                    if batch % (batch_count / 4) == 0:
                         run_options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
                         run_metadata = tf.RunMetadata()
                         _, batch_loss, summary = sess.run([optimizer, total_loss, summaries],
@@ -321,14 +321,15 @@ def run_training(type_to_ids_table, id_to_type_table, type_to_ids_constants, id_
                         step = '{}-{}'.format(epoch, batch)
                         summary_writer.add_run_metadata(run_metadata, step)
                         summary_writer.add_summary(summary, epoch * batch_count + batch)
-                        print "\tSaved summary for step " + step
+                        print "\tSaved summary for step {}...".format(step)
                     else:
                         _, batch_loss = sess.run([optimizer, total_loss])
                     batch_losses.append(batch_loss)
 
                 # Checkpoint
                 save_path = saver.save(sess, FLAGS.output_dir + '/model.ckpt', epoch)
-                print('Epoch {} Loss: {} (Model saved as {})'.format(epoch, np.mean(batch_losses), save_path))
+                print('Epoch {} Loss: {} (Model saved as {})'.format(epoch,
+                                                                     np.mean(batch_losses) / batch_count, save_path))
 
         except tf.errors.OutOfRangeError:
             print('Done training -- epoch limit reached')
@@ -383,7 +384,6 @@ def infer_triples():
                                       capacity=4 * batch_size,
                                       enqueue_many=True,
                                       allow_smaller_final_batch=False)
-        print triple_batch
 
         eval_loss = evaluate_triples(triple_batch, embeddings, embedding_dim, relation_count)
 
@@ -410,7 +410,7 @@ def infer_triples():
                     triples, batch_loss = sess.run([triple_batch, eval_loss])
                     for pair in zip(batch_loss, triples):
                         loss = pair[0]
-                        confidence = 1 - loss
+                        confidence = -loss
                         if confidence > FLAGS.inference_threshold:
                             print 'Confidence {} that http://localhost:9200/diffbot_entity/Person/{} has skill\n\t' \
                                   'http://localhost:9200/diffbot_entity/Skill/{}'.\
