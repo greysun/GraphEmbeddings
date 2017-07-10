@@ -5,6 +5,7 @@ See https://arxiv.org/pdf/1510.04935.pdf
 """
 import argparse
 import errno
+import itertools
 import os
 import random
 import shutil
@@ -68,7 +69,7 @@ def get_the_data():
         next(f)  # skip header
         for line in f:
             entity_count += 1
-            diffbot_id, index = line.split('\t')
+            diffbot_id, index, name, diffbot_type = line.split('\t')
             type_char = diffbot_id[0]
             index = int(index)
             type_to_ids[type_char].append(index)
@@ -77,8 +78,11 @@ def get_the_data():
     print 'Entities: ', entity_count, 'Relations: ', relation_count, 'Triples: ', triple_count
     print 'Types: ', {k: len(v) for k, v in type_to_ids.iteritems()}
 
-    type_to_ids_table, type_to_ids_constants = init_table(type_to_ids, tf.string, tf.int64, 'type_to_ids', pad_int=True)
-    id_to_type_table, id_to_type_constants = init_table(id_to_type, tf.int64, tf.string, 'id_to_type')
+    with tf.name_scope('init_type_to_ids'):
+        type_to_ids_table, type_to_ids_constants = init_table(type_to_ids, tf.string, tf.int64, 'type_to_ids',
+                                                              pad_int=True)
+    with tf.name_scope('init_id_to_type'):
+        id_to_type_table, id_to_type_constants = init_table(id_to_type, tf.int64, tf.string, 'id_to_type')
 
     with tf.name_scope('input'):
         # Load triples from triple_file TSV
@@ -281,8 +285,10 @@ def run_training(type_to_ids_table, id_to_type_table, type_to_ids_constants, id_
             sess = tf_debug.LocalCLIDebugWrapperSession(sess)
             sess.add_tensor_filter("has_inf_or_nan", tf_debug.has_inf_or_nan)
 
-        populate_table(id_to_type_constants, id_to_type_table)
-        populate_table(type_to_ids_constants, type_to_ids_table)
+        with tf.name_scope('insert_id_to_type'):
+            populate_table(id_to_type_constants, id_to_type_table)
+        with tf.name_scope('insert_type_to_ids'):
+            populate_table(type_to_ids_constants, type_to_ids_table)
 
         init_op = tf.global_variables_initializer()
         sess.run(init_op)
@@ -314,7 +320,7 @@ def run_training(type_to_ids_table, id_to_type_table, type_to_ids_constants, id_
                                                           run_metadata=run_metadata)
                         step = '{}-{}'.format(epoch, batch)
                         summary_writer.add_run_metadata(run_metadata, step)
-                        # supervisor.summary_computed(sess, summary)
+                        summary_writer.add_summary(summary, epoch * batch_count + batch)
                         print "\tSaved summary for step " + step
                     else:
                         _, batch_loss = sess.run([optimizer, total_loss])
@@ -328,33 +334,101 @@ def run_training(type_to_ids_table, id_to_type_table, type_to_ids_constants, id_
             print('Done training -- epoch limit reached')
         finally:
             coord.request_stop()
+            saver.save(sess, FLAGS.output_dir + '/model.ckpt')
 
         coord.join(threads)
 
 
-def infer_triples(entity_count, relation_count, inference_pairs=None):
+def infer_triples():
+    # TODO: this should be loaded from the saved model
     embedding_dim = FLAGS.embedding_dim
     batch_size = FLAGS.batch_size
+    entity_file = 'diffbot_data/entity_metadata.tsv'
+    relation_file = 'diffbot_data/relation_ids.txt'
+    corrupt_triple_file = 'diffbot_data/triples.txt'
 
-    projector_config = projector.ProjectorConfig()
-    embeddings = init_embedding(projector_config, 'embeddings', entity_count, embedding_dim)
+    type_to_ids = defaultdict(list)
+    id_to_metadata = dict()
 
-    tf.train.batch(inference_pairs, batch_size)
+    relation_count = sum(1 for line in open(relation_file))
+    triple_count = sum(1 for line in open(corrupt_triple_file))
 
-    #with tf.name_scope('eval'):
-    #    eval_loss = evaluate_triples(head_relation_batch, embeddings, embedding_dim, relation_count)
+    entity_count = 0
+    with open(entity_file, 'r') as f:
+        next(f)  # skip header
+        for line in f:
+            entity_count += 1
+            diffbot_id, index, name, diffbot_type = line.split('\t')
+            type_char = diffbot_id[0]
+            index = int(index)
+            type_to_ids[type_char].append(index)
+            id_to_metadata[index] = diffbot_id + ' ' + name
 
-    saver = tf.train.Saver({'embeddings': embeddings})
+    print 'Entities: ', entity_count, 'Relations: ', relation_count, 'Triples: ', triple_count
+    print 'Types: ', {k: len(v) for k, v in type_to_ids.iteritems()}
 
-    init_op = tf.global_variables_initializer()
+    # Infer persons
+    infer_heads = type_to_ids['P'][:100]
+
+    # Infer skills
+    infer_relations = [6]
+
+    # Candidate targets
+    infer_tails = type_to_ids['S']
+
+    triples = tf.constant(list(itertools.product(infer_heads, infer_relations, infer_tails)))
+
+    with tf.name_scope('batch'):
+        projector_config = projector.ProjectorConfig()
+        embeddings = init_embedding(projector_config, 'embeddings', entity_count, embedding_dim)
+
+        triple_batch = tf.train.batch([triples], batch_size,
+                                      capacity=4 * batch_size,
+                                      enqueue_many=True,
+                                      allow_smaller_final_batch=False)
+        print triple_batch
+
+        eval_loss = evaluate_triples(triple_batch, embeddings, embedding_dim, relation_count)
+
+        # Save embeddings
+        saver = tf.train.Saver({'embeddings': embeddings})
+
+        with tf.Session() as sess:
+            if FLAGS.debug:
+                sess = tf_debug.LocalCLIDebugWrapperSession(sess)
+                sess.add_tensor_filter("has_inf_or_nan", tf_debug.has_inf_or_nan)
+
+            init_op = tf.global_variables_initializer()
+            sess.run(init_op)
+
+            saver.restore(sess, FLAGS.output_dir + '/model.ckpt')
+            summary_writer = tf.summary.FileWriter(FLAGS.output_dir + '/eval_graph', sess.graph)
+            projector.visualize_embeddings(summary_writer, projector_config)
+
+            coord = tf.train.Coordinator()
+            threads = tf.train.start_queue_runners(sess=sess, coord=coord)
+
+            try:
+                while True:
+                    triples, batch_loss = sess.run([triple_batch, eval_loss])
+                    for pair in zip(batch_loss, triples):
+                        print 'Confidence {} that http://localhost:9200/diffbot_entity/Person/{} has skill\n\t' \
+                              'http://localhost:9200/diffbot_entity/Skill/{}'.\
+                            format(pair[0], id_to_metadata[pair[1][0]], id_to_metadata[pair[1][2]])
+            except tf.errors.OutOfRangeError:
+                print('Done evaluation -- triple limit reached')
+            finally:
+                coord.request_stop()
+
+            coord.join(threads)
 
 
 def main(_):
-    type_to_ids_table, id_to_type_table, type_to_ids_constants, id_to_type_constants, \
-        entity_count, relation_count, triple_count, triples = get_the_data()
     if FLAGS.infer:
-        infer_triples(entity_count, relation_count)
+        infer_triples()
     else:
+        type_to_ids_table, id_to_type_table, type_to_ids_constants, id_to_type_constants, \
+            entity_count, relation_count, triple_count, triples = get_the_data()
         run_training(type_to_ids_table, id_to_type_table, type_to_ids_constants, id_to_type_constants,
                      entity_count, relation_count, triple_count, triples)
 
