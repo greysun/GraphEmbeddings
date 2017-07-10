@@ -345,13 +345,11 @@ def infer_triples():
     batch_size = FLAGS.batch_size
     entity_file = 'diffbot_data/entity_metadata.tsv'
     relation_file = 'diffbot_data/relation_ids.txt'
-    corrupt_triple_file = 'diffbot_data/triples.txt'
 
     type_to_ids = defaultdict(list)
     id_to_metadata = dict()
 
     relation_count = sum(1 for line in open(relation_file))
-    triple_count = sum(1 for line in open(corrupt_triple_file))
 
     entity_count = 0
     with open(entity_file, 'r') as f:
@@ -364,7 +362,6 @@ def infer_triples():
             type_to_ids[type_char].append(index)
             id_to_metadata[index] = diffbot_id + ' ' + name
 
-    print 'Entities: ', entity_count, 'Relations: ', relation_count, 'Triples: ', triple_count
     print 'Types: ', {k: len(v) for k, v in type_to_ids.iteritems()}
 
     # Infer persons
@@ -412,9 +409,11 @@ def infer_triples():
                 while True:
                     triples, batch_loss = sess.run([triple_batch, eval_loss])
                     for pair in zip(batch_loss, triples):
-                        print 'Confidence {} that http://localhost:9200/diffbot_entity/Person/{} has skill\n\t' \
-                              'http://localhost:9200/diffbot_entity/Skill/{}'.\
-                            format(pair[0], id_to_metadata[pair[1][0]], id_to_metadata[pair[1][2]])
+                        confidence = pair[0]
+                        if confidence > FLAGS.inference_threshold:
+                            print 'Confidence {} that http://localhost:9200/diffbot_entity/Person/{} has skill\n\t' \
+                                  'http://localhost:9200/diffbot_entity/Skill/{}'.\
+                                  format(confidence, id_to_metadata[pair[1][0]], id_to_metadata[pair[1][2]])
             except tf.errors.OutOfRangeError:
                 print('Done evaluation -- triple limit reached')
             finally:
@@ -501,6 +500,12 @@ if __name__ == '__main__':
     parser.add_argument(
         '--infer',
         action='store_true',
+        help='Infer new triples from the latest checkpoint model.'
+    )
+    parser.add_argument(
+        '--inference-threshold',
+        type=float,
+        default=0.99,
         help='Infer new triples from the latest checkpoint model.'
     )
 
