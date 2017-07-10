@@ -164,7 +164,7 @@ def circular_correlation(h, t):
 
 def init_embedding(projector_config, name, entity_count, embedding_dim):
     embedding = tf.get_variable(name, [entity_count, 2 * embedding_dim],
-                                initializer=tf.random_normal_initializer)
+                                initializer=tf.contrib.layers.xavier_initializer(uniform=False))
 
     embeddings_config = projector_config.embeddings.add()
     embeddings_config.tensor_name = name
