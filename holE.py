@@ -261,7 +261,6 @@ def run_training(type_to_ids_table, id_to_type_table, type_to_ids_constants, id_
         loss = tf.maximum(train_loss - corrupt_loss + margin, 0)
 
         global_step = tf.Variable(0, trainable=False)
-        # TODO: experiment with lr annealing
         lr_decay = tf.train.inverse_time_decay(learning_rate, global_step,
                                                decay_steps=FLAGS.learning_decay_steps*batch_count,
                                                decay_rate=FLAGS.learning_decay_rate)
@@ -376,7 +375,7 @@ def infer_triples():
 
     triples = tf.constant(list(itertools.product(infer_heads, infer_relations, infer_tails)))
 
-    with tf.name_scope('batch'):
+    with tf.name_scope('inference'):
         projector_config = projector.ProjectorConfig()
         embeddings = init_embedding(projector_config, 'embeddings', entity_count, embedding_dim)
 
@@ -410,7 +409,8 @@ def infer_triples():
                 while True:
                     triples, batch_loss = sess.run([triple_batch, eval_loss])
                     for pair in zip(batch_loss, triples):
-                        confidence = pair[0]
+                        loss = pair[0]
+                        confidence = 1 - loss
                         if confidence > FLAGS.inference_threshold:
                             print 'Confidence {} that http://localhost:9200/diffbot_entity/Person/{} has skill\n\t' \
                                   'http://localhost:9200/diffbot_entity/Skill/{}'.\
@@ -461,7 +461,7 @@ if __name__ == '__main__':
     parser.add_argument(
         '--batch_size',
         type=int,
-        default=128,
+        default=512,
         help='Batch size.'
     )
     parser.add_argument(
