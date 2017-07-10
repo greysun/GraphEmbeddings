@@ -257,10 +257,9 @@ def run_training(type_to_ids_table, id_to_type_table, type_to_ids_constants, id_
         loss = tf.maximum(train_loss - corrupt_loss + margin, 0)
 
         global_step = tf.Variable(0, trainable=False)
-        learning_rate = 0.1
         k = 0.5
         # TODO: experiment with lr annealing
-        lr_decay = tf.train.inverse_time_decay(learning_rate, global_step, decay_steps=32, decay_rate=k)
+        lr_decay = tf.train.inverse_time_decay(learning_rate, global_step, decay_steps=32*batch_count, decay_rate=k)
 
         # TODO: experiment with other optimizers
         optimizer = tf.train.GradientDescentOptimizer(lr_decay).minimize(loss, global_step=global_step)
