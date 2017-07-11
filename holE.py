@@ -177,6 +177,7 @@ def init_embedding(projector_config, name, entity_count, embedding_dim):
 
     embeddings_config = projector_config.embeddings.add()
     embeddings_config.tensor_name = name
+    embedding.metadata_path = 'diffbot_data/entity_metadata.tsv'
 
     return embedding
 
@@ -308,7 +309,6 @@ def run_training(type_to_ids_table, id_to_type_table, type_to_ids_constants, id_
             # TODO: continue counting from last epoch
 
         summary_writer = tf.summary.FileWriter(FLAGS.output_dir + '/graph', sess.graph)
-        projector.visualize_embeddings(summary_writer, projector_config)
 
         coord = tf.train.Coordinator()
         threads = tf.train.start_queue_runners(sess=sess, coord=coord)
@@ -338,6 +338,7 @@ def run_training(type_to_ids_table, id_to_type_table, type_to_ids_constants, id_
 
                 # Checkpoint
                 save_path = saver.save(sess, FLAGS.output_dir + '/model.ckpt', epoch)
+                projector.visualize_embeddings(summary_writer, projector_config)
                 print('Epoch {} Loss: {} (Model saved as {})'.format(epoch,
                                                                      np.mean(batch_losses) / batch_count, save_path))
 
