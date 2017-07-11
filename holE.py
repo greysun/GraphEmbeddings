@@ -161,14 +161,9 @@ def corrupt_batch(type_to_ids, id_to_type, relation_count, triples):
                    lambda: corrupt_entities(type_to_ids, id_to_type, triples))
 
 
-def init_embedding(projector_config, name, entity_count, embedding_dim):
+def init_embedding(name, entity_count, embedding_dim):
     embedding = tf.get_variable(name, [entity_count, 2 * embedding_dim],
                                 initializer=tf.contrib.layers.xavier_initializer(uniform=False))
-
-    embeddings_config = projector_config.embeddings.add()
-    embeddings_config.tensor_name = name
-    embedding.metadata_path = 'diffbot_data/entity_metadata.tsv'
-
     return embedding
 
 
@@ -308,7 +303,6 @@ def run_training(type_to_ids_table, id_to_type_table, type_to_ids_constants, id_
             # TODO: continue counting from last epoch
 
         summary_writer = tf.summary.FileWriter(FLAGS.output_dir, sess.graph)
-        projector.visualize_embeddings(summary_writer, projector_config)
 
         coord = tf.train.Coordinator()
         threads = tf.train.start_queue_runners(sess=sess, coord=coord)
@@ -339,6 +333,11 @@ def run_training(type_to_ids_table, id_to_type_table, type_to_ids_constants, id_
                 # Checkpoint
                 # TODO: verify embeddings are being saved properly
                 save_path = saver.save(sess, FLAGS.output_dir + '/model.ckpt', epoch)
+
+                embeddings_config = projector_config.embeddings.add()
+                embeddings_config.tensor_name = embeddings.name
+                embeddings.metadata_path = 'diffbot_data/entity_metadata.tsv'
+                projector.visualize_embeddings(summary_writer, projector_config)
 
                 print('Epoch {} Loss: {}, (Model saved as {})'
                       .format(epoch, np.mean(batch_losses), save_path))
