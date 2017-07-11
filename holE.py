@@ -182,11 +182,6 @@ def complex_tanh(complex_tensor):
 
 
 def circular_correlation(h, t):
-    if FLAGS.cpu:
-        # For prototyping only, L = tanh(relation * (head - tail)^T)
-        # In other words, minimize (head -> tail) being anti-parallel to relation
-        return h - t
-
     # these ops are GPU only!
     return tf.ifft(tf.multiply(tf.conj(tf.fft(h)), tf.fft(t)))
 
@@ -202,9 +197,13 @@ def evaluate_triples(triple_batch, embeddings, embedding_dim):
 
     # Compute loss
     with tf.name_scope('eval'):
-        loss = complex_tanh(tf.matmul(relation_embeddings,
-                                      circular_correlation(head_embeddings, tail_embeddings),
-                                      transpose_b=True))
+        if FLAGS.cpu:
+            # TransE
+            loss = complex_tanh(head_embeddings + relation_embeddings - tail_embeddings)
+        else:
+            loss = complex_tanh(tf.matmul(relation_embeddings,
+                                          circular_correlation(head_embeddings, tail_embeddings),
+                                          transpose_b=True))
         variable_summaries(loss)
         return loss
 
@@ -309,7 +308,7 @@ def run_training(type_to_ids_table, id_to_type_table, type_to_ids_constants, id_
             # while not supervisor.should_stop():
             while True:
                 epoch += 1
-                
+
                 projector_config = projector.ProjectorConfig()
                 embeddings_config = projector_config.embeddings.add()
                 embeddings_config.tensor_name = embeddings.name
