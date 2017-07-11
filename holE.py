@@ -243,8 +243,7 @@ def run_training(type_to_ids_table, id_to_type_table, type_to_ids_constants, id_
             raise
 
     # Initialize embeddings (TF doesn't support complex embeddings, split real part and imaginary part)
-    projector_config = projector.ProjectorConfig()
-    embeddings = init_embedding(projector_config, 'embeddings', entity_count, embedding_dim)
+    embeddings = init_embedding('embeddings', entity_count, embedding_dim)
 
     with tf.name_scope('batch'):
         # Sample triples
@@ -334,6 +333,7 @@ def run_training(type_to_ids_table, id_to_type_table, type_to_ids_constants, id_
                 # TODO: verify embeddings are being saved properly
                 save_path = saver.save(sess, FLAGS.output_dir + '/model.ckpt', epoch)
 
+                projector_config = projector.ProjectorConfig()
                 embeddings_config = projector_config.embeddings.add()
                 embeddings_config.tensor_name = embeddings.name
                 embeddings.metadata_path = 'diffbot_data/entity_metadata.tsv'
@@ -385,8 +385,7 @@ def infer_triples():
     triples = tf.constant(list(itertools.product(infer_heads, infer_relations, infer_tails)))
 
     with tf.name_scope('inference'):
-        projector_config = projector.ProjectorConfig()
-        embeddings = init_embedding(projector_config, 'embeddings', entity_count, embedding_dim)
+        embeddings = init_embedding('embeddings', entity_count, embedding_dim)
 
         triple_batch = tf.train.batch([triples], batch_size,
                                       capacity=4 * batch_size,
