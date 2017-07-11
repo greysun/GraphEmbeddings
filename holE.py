@@ -269,6 +269,10 @@ def run_training(type_to_ids_table, id_to_type_table, type_to_ids_constants, id_
         # Score and minimize hinge-loss
         loss = tf.maximum(train_loss - corrupt_loss + margin, 0)
 
+        # Log the total batch loss
+        variable_summaries(loss)
+        average_loss = tf.reduce_mean(loss)
+
         global_step = tf.Variable(0, trainable=False)
         lr_decay = tf.train.inverse_time_decay(learning_rate, global_step,
                                                decay_steps=FLAGS.learning_decay_steps*batch_count,
@@ -276,10 +280,6 @@ def run_training(type_to_ids_table, id_to_type_table, type_to_ids_constants, id_
 
         # TODO: experiment with other optimizers
         optimizer = tf.train.GradientDescentOptimizer(lr_decay).minimize(loss, global_step=global_step)
-
-        # Log the total batch loss
-        average_loss = tf.reduce_mean(loss)
-        tf.summary.scalar('loss', average_loss)
 
     summaries = tf.summary.merge_all()
 
@@ -308,6 +308,7 @@ def run_training(type_to_ids_table, id_to_type_table, type_to_ids_constants, id_
             # TODO: continue counting from last epoch
 
         summary_writer = tf.summary.FileWriter(FLAGS.output_dir, sess.graph)
+        projector.visualize_embeddings(summary_writer, projector_config)
 
         coord = tf.train.Coordinator()
         threads = tf.train.start_queue_runners(sess=sess, coord=coord)
@@ -323,25 +324,24 @@ def run_training(type_to_ids_table, id_to_type_table, type_to_ids_constants, id_
                     if batch % (batch_count / 4) == 0:
                         run_options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
                         run_metadata = tf.RunMetadata()
-                        _, batch_loss, train, corrupt, summary = sess.run([optimizer, average_loss, train_loss,
-                                                                           corrupt_loss, summaries],
-                                                                          options=run_options,
-                                                                          run_metadata=run_metadata)
+                        _, batch_loss, summary = sess.run([optimizer, average_loss, summaries],
+                                                          options=run_options,
+                                                          run_metadata=run_metadata)
                         step = '{}-{}'.format(epoch, batch)
                         summary_writer.add_run_metadata(run_metadata, step)
                         summary_writer.add_summary(summary, epoch * batch_count + batch)
                         print '\tSaved summary for step {}...'.format(step)
 
                     else:
-                        _, batch_loss, train, corrupt = sess.run([optimizer, average_loss, train_loss, corrupt_loss])
+                        _, batch_loss = sess.run([optimizer, average_loss])
                     batch_losses.append(batch_loss)
 
                 # Checkpoint
                 # TODO: verify embeddings are being saved properly
                 save_path = saver.save(sess, FLAGS.output_dir + '/model.ckpt', epoch)
-                projector.visualize_embeddings(summary_writer, projector_config)
-                print('Epoch {} Loss: {}, Train Loss: {}, Corrupt Loss: {} (Model saved as {})'
-                      .format(epoch, np.mean(batch_losses), train, corrupt, save_path))
+
+                print('Epoch {} Loss: {}, (Model saved as {})'
+                      .format(epoch, np.mean(batch_losses), save_path))
 
         except tf.errors.OutOfRangeError:
             print('Done training -- epoch limit reached')
