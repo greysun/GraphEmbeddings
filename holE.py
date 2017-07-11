@@ -69,7 +69,7 @@ def get_the_data():
         next(f)  # skip header
         for line in f:
             entity_count += 1
-            diffbot_id, index, name, diffbot_type = line.split('\t')
+            index, diffbot_id, name, diffbot_type = line.split('\t')
             type_char = diffbot_id[0]
             index = int(index)
             type_to_ids[type_char].append(index)
@@ -333,7 +333,7 @@ def run_training(type_to_ids_table, id_to_type_table, type_to_ids_constants, id_
                         print '\tSaved summary for step {}...'.format(step)
 
                     else:
-                        _, batch_loss = sess.run([optimizer, total_loss])
+                        _, batch_loss, = sess.run([optimizer, total_loss])
                     batch_losses.append(batch_loss)
 
                 # Checkpoint
