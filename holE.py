@@ -161,16 +161,6 @@ def corrupt_batch(type_to_ids, id_to_type, relation_count, triples):
                    lambda: corrupt_entities(type_to_ids, id_to_type, triples))
 
 
-def circular_correlation(h, t):
-    if FLAGS.cpu:
-        # For prototyping only, L = tanh(relation * (head - tail)^T)
-        # In other words, minimize (head -> tail) being anti-parallel to relation
-        return h - t
-
-    # these ops are GPU only!
-    return tf.ifft(tf.multiply(tf.conj(tf.fft(h)), tf.fft(t)))
-
-
 def init_embedding(projector_config, name, entity_count, embedding_dim):
     embedding = tf.get_variable(name, [entity_count, 2 * embedding_dim],
                                 initializer=tf.contrib.layers.xavier_initializer(uniform=False))
@@ -191,29 +181,37 @@ def get_embedding(layer_name, entity_ids, embeddings, embedding_dim):
                           name=layer_name)
 
 
-def complex_tanh(complex_tensor):
-    summed = tf.reduce_sum(tf.real(complex_tensor) + tf.imag(complex_tensor), 1)
-    return tf.tanh(summed)
+def complex_sigmoid(complex_tensor):
+    sigmoid = tf.sigmoid(tf.reduce_sum(complex_tensor, 1))
+    magnitude = tf.sqrt(tf.square(tf.real(sigmoid) + tf.imag(sigmoid)))
+    return magnitude
+
+
+def circular_correlation(h, t):
+    if FLAGS.cpu:
+        # For prototyping only, L = tanh(relation * (head - tail)^T)
+        # In other words, minimize (head -> tail) being anti-parallel to relation
+        return h - t
+
+    # these ops are GPU only!
+    return tf.ifft(tf.multiply(tf.conj(tf.fft(h)), tf.fft(t)))
 
 
 def evaluate_triples(triple_batch, embeddings, embedding_dim):
     # Load embeddings
-    pos_h = tf.slice(triple_batch, [0, 0], [-1, 1], name='h_id')
-    head = get_embedding('h', pos_h, embeddings, embedding_dim)
-    pos_t = tf.slice(triple_batch, [0, 1], [-1, 1], name='t_id')
-    tail = get_embedding('t', pos_t, embeddings, embedding_dim)
-    pos_r = tf.slice(triple_batch, [0, 2], [-1, 1], name='r_id')
-    relation = get_embedding('r', pos_r, embeddings, embedding_dim)
+    head_column = tf.slice(triple_batch, [0, 0], [-1, 1], name='h_id')
+    head_embeddings = get_embedding('h', head_column, embeddings, embedding_dim)
+    tail_column = tf.slice(triple_batch, [0, 1], [-1, 1], name='t_id')
+    tail_embeddings = get_embedding('t', tail_column, embeddings, embedding_dim)
+    relation_column = tf.slice(triple_batch, [0, 2], [-1, 1], name='r_id')
+    relation_embeddings = get_embedding('r', relation_column, embeddings, embedding_dim)
 
     # Compute loss
     with tf.name_scope('eval'):
-        loss = complex_tanh(tf.matmul(relation,
-                                      circular_correlation(head, tail),
-                                      transpose_b=True))
+        loss = complex_sigmoid(tf.matmul(relation_embeddings,
+                                         circular_correlation(head_embeddings, tail_embeddings),
+                                         transpose_b=True))
         variable_summaries(loss)
-        loss_scalar = tf.reduce_sum(loss)
-        tf.summary.scalar('total', loss_scalar)
-
         return loss
 
 
@@ -279,8 +277,8 @@ def run_training(type_to_ids_table, id_to_type_table, type_to_ids_constants, id_
         optimizer = tf.train.GradientDescentOptimizer(lr_decay).minimize(loss, global_step=global_step)
 
         # Log the total batch loss
-        total_loss = tf.reduce_sum(loss)
-        tf.summary.scalar('loss', total_loss)
+        average_loss = tf.reduce_mean(loss)
+        tf.summary.scalar('loss', average_loss)
 
     summaries = tf.summary.merge_all()
 
@@ -324,7 +322,7 @@ def run_training(type_to_ids_table, id_to_type_table, type_to_ids_constants, id_
                     if batch % (batch_count / 4) == 0:
                         run_options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
                         run_metadata = tf.RunMetadata()
-                        _, batch_loss, summary = sess.run([optimizer, total_loss, summaries],
+                        _, batch_loss, summary = sess.run([optimizer, average_loss, summaries],
                                                           options=run_options,
                                                           run_metadata=run_metadata)
                         step = '{}-{}'.format(epoch, batch)
@@ -333,14 +331,13 @@ def run_training(type_to_ids_table, id_to_type_table, type_to_ids_constants, id_
                         print '\tSaved summary for step {}...'.format(step)
 
                     else:
-                        _, batch_loss, = sess.run([optimizer, total_loss])
+                        _, batch_loss = sess.run([optimizer, average_loss])
                     batch_losses.append(batch_loss)
 
                 # Checkpoint
                 save_path = saver.save(sess, FLAGS.output_dir + '/model.ckpt', epoch)
                 projector.visualize_embeddings(summary_writer, projector_config)
-                print('Epoch {} Loss: {} (Model saved as {})'.format(epoch,
-                                                                     np.mean(batch_losses) / batch_count, save_path))
+                print('Epoch {} Loss: {} (Model saved as {})'.format(epoch, np.mean(batch_losses), save_path))
 
         except tf.errors.OutOfRangeError:
             print('Done training -- epoch limit reached')
