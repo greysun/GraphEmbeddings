@@ -364,7 +364,7 @@ def infer_triples():
         next(f)  # skip header
         for line in f:
             entity_count += 1
-            diffbot_id, index, name, diffbot_type = line.split('\t')
+            index, diffbot_id, name, diffbot_type = line.split('\t')
             type_char = diffbot_id[0]
             index = int(index)
             type_to_ids[type_char].append(index)
