@@ -176,11 +176,9 @@ def get_embedding(layer_name, entity_ids, embeddings, embedding_dim):
                           name=layer_name)
 
 
-def complex_sigmoid(complex_tensor):
-    sigmoid = tf.sigmoid(tf.reduce_sum(complex_tensor, 1))
-    sum_of_squares = tf.square(tf.real(sigmoid)) + tf.square(tf.imag(sigmoid))
-    magnitude = tf.sqrt(tf.clip_by_value(sum_of_squares, 1, 1e-6))
-    return magnitude
+def complex_tanh(complex_tensor):
+    summed = tf.reduce_sum(tf.real(complex_tensor) + tf.imag(complex_tensor), 1)
+    return tf.tanh(summed)
 
 
 def circular_correlation(h, t):
@@ -204,9 +202,9 @@ def evaluate_triples(triple_batch, embeddings, embedding_dim):
 
     # Compute loss
     with tf.name_scope('eval'):
-        loss = complex_sigmoid(tf.matmul(relation_embeddings,
-                                         circular_correlation(head_embeddings, tail_embeddings),
-                                         transpose_b=True))
+        loss = complex_tanh(tf.matmul(relation_embeddings,
+                                      circular_correlation(head_embeddings, tail_embeddings),
+                                      transpose_b=True))
         variable_summaries(loss)
         return loss
 
@@ -311,6 +309,13 @@ def run_training(type_to_ids_table, id_to_type_table, type_to_ids_constants, id_
             # while not supervisor.should_stop():
             while True:
                 epoch += 1
+                
+                projector_config = projector.ProjectorConfig()
+                embeddings_config = projector_config.embeddings.add()
+                embeddings_config.tensor_name = embeddings.name
+                embeddings.metadata_path = 'diffbot_data/entity_metadata.tsv'
+                projector.visualize_embeddings(summary_writer, projector_config)
+
                 batch_losses = []
                 for batch in range(1, batch_count):
                     # Train and log batch to summary_writer
@@ -326,18 +331,12 @@ def run_training(type_to_ids_table, id_to_type_table, type_to_ids_constants, id_
                         print '\tSaved summary for step {}...'.format(step)
 
                     else:
-                        _, batch_loss = sess.run([optimizer, average_loss])
+                        _, batch_loss, t_l, c_l = sess.run([optimizer, average_loss, train_loss, corrupt_loss])
                     batch_losses.append(batch_loss)
 
                 # Checkpoint
                 # TODO: verify embeddings are being saved properly
                 save_path = saver.save(sess, FLAGS.output_dir + '/model.ckpt', epoch)
-
-                projector_config = projector.ProjectorConfig()
-                embeddings_config = projector_config.embeddings.add()
-                embeddings_config.tensor_name = embeddings.name
-                embeddings.metadata_path = 'diffbot_data/entity_metadata.tsv'
-                projector.visualize_embeddings(summary_writer, projector_config)
 
                 print('Epoch {} Loss: {}, (Model saved as {})'
                       .format(epoch, np.mean(batch_losses), save_path))
