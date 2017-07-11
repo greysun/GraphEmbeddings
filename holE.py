@@ -110,7 +110,12 @@ def corrupt_heads(type_to_ids, id_to_type, triples):
 
         head_types = id_to_type.lookup(head_column)
         type_ids = tf.reshape(type_to_ids.lookup(head_types), [FLAGS.batch_size, FLAGS.padded_size])
-        corrupt_head_column = tf.random_crop(type_ids, [FLAGS.batch_size, 1])
+
+        random_indices = tf.random_uniform([FLAGS.batch_size],
+                                           maxval=FLAGS.padded_size,
+                                           dtype=tf.int32)
+        flattened_indices = tf.range(0, FLAGS.batch_size) * FLAGS.padded_size + random_indices
+        corrupt_head_column = tf.reshape(tf.gather(tf.reshape(type_ids, [-1]), flattened_indices), [FLAGS.batch_size, 1])
         concat = tf.concat([tf.cast(corrupt_head_column, tf.int32), tail_column, relation_column], 1)
         return concat
 
@@ -121,10 +126,14 @@ def corrupt_tails(type_to_ids, id_to_type, triples):
         tail_column = tf.cast(tf.slice(triples, [0, 1], [-1, 1]), tf.int64)
         relation_column = tf.slice(triples, [0, 2], [-1, 1])
 
-        tail_types = id_to_type.lookup(tail_column, name='types')
-        type_ids = type_to_ids.lookup(tail_types, name='type_ids')
-        reshaped = tf.reshape(type_ids, [FLAGS.batch_size, FLAGS.padded_size], name='reshaped')
-        corrupt_tail_column = tf.random_crop(reshaped, [FLAGS.batch_size, 1], name='final_column')
+        tail_types = id_to_type.lookup(tail_column)
+        type_ids = tf.reshape(type_to_ids.lookup(tail_types), [FLAGS.batch_size, FLAGS.padded_size])
+
+        random_indices = tf.random_uniform([FLAGS.batch_size],
+                                           maxval=FLAGS.padded_size,
+                                           dtype=tf.int32)
+        flattened_indices = tf.range(0, FLAGS.batch_size) * FLAGS.padded_size + random_indices
+        corrupt_tail_column = tf.reshape(tf.gather(tf.reshape(type_ids, [-1]), flattened_indices), [FLAGS.batch_size, 1])
         concat = tf.concat([head_column, tf.cast(corrupt_tail_column, tf.int32), relation_column], 1)
         return concat
 
@@ -186,7 +195,7 @@ def complex_tanh(complex_tensor):
     return tf.tanh(summed)
 
 
-def evaluate_triples(triple_batch, embeddings, embedding_dim, relation_count):
+def evaluate_triples(triple_batch, embeddings, embedding_dim):
     # Load embeddings
     pos_h = tf.slice(triple_batch, [0, 0], [-1, 1], name='h_id')
     head = get_embedding('h', pos_h, embeddings, embedding_dim)
@@ -227,7 +236,7 @@ def run_training(type_to_ids_table, id_to_type_table, type_to_ids_constants, id_
     learning_rate = FLAGS.learning_rate
     batch_size = FLAGS.batch_size
     batch_count = triple_count / batch_size
-    print "Embedding dimension: ", embedding_dim, "Batch size: ", batch_size, "Batch count: ", batch_count
+    print 'Embedding dimension: ', embedding_dim, 'Batch size: ', batch_size, 'Batch count: ', batch_count
 
     # Warning: this will clobber existing summaries
     if not FLAGS.resume_checkpoint and os.path.isdir(FLAGS.output_dir):
@@ -252,10 +261,10 @@ def run_training(type_to_ids_table, id_to_type_table, type_to_ids_constants, id_
 
         # Evaluate triples
         with tf.name_scope('train'):
-            train_loss = evaluate_triples(triple_batch, embeddings, embedding_dim, relation_count)
+            train_loss = evaluate_triples(triple_batch, embeddings, embedding_dim)
         with (tf.name_scope('corrupt')):
             corrupt_triples = corrupt_batch(type_to_ids_table, id_to_type_table, relation_count, triple_batch)
-            corrupt_loss = evaluate_triples(corrupt_triples, embeddings, embedding_dim, relation_count)
+            corrupt_loss = evaluate_triples(corrupt_triples, embeddings, embedding_dim)
 
         # Score and minimize hinge-loss
         loss = tf.maximum(train_loss - corrupt_loss + margin, 0)
@@ -283,7 +292,7 @@ def run_training(type_to_ids_table, id_to_type_table, type_to_ids_constants, id_
     with tf.Session() as sess:
         if FLAGS.debug:
             sess = tf_debug.LocalCLIDebugWrapperSession(sess)
-            sess.add_tensor_filter("has_inf_or_nan", tf_debug.has_inf_or_nan)
+            sess.add_tensor_filter('has_inf_or_nan', tf_debug.has_inf_or_nan)
 
         with tf.name_scope('insert_id_to_type'):
             populate_table(id_to_type_constants, id_to_type_table)
@@ -321,7 +330,8 @@ def run_training(type_to_ids_table, id_to_type_table, type_to_ids_constants, id_
                         step = '{}-{}'.format(epoch, batch)
                         summary_writer.add_run_metadata(run_metadata, step)
                         summary_writer.add_summary(summary, epoch * batch_count + batch)
-                        print "\tSaved summary for step {}...".format(step)
+                        print '\tSaved summary for step {}...'.format(step)
+
                     else:
                         _, batch_loss = sess.run([optimizer, total_loss])
                     batch_losses.append(batch_loss)
@@ -345,12 +355,9 @@ def infer_triples():
     embedding_dim = FLAGS.embedding_dim
     batch_size = FLAGS.batch_size
     entity_file = 'diffbot_data/entity_metadata.tsv'
-    relation_file = 'diffbot_data/relation_ids.txt'
 
     type_to_ids = defaultdict(list)
     id_to_metadata = dict()
-
-    relation_count = sum(1 for line in open(relation_file))
 
     entity_count = 0
     with open(entity_file, 'r') as f:
@@ -385,7 +392,7 @@ def infer_triples():
                                       enqueue_many=True,
                                       allow_smaller_final_batch=False)
 
-        eval_loss = evaluate_triples(triple_batch, embeddings, embedding_dim, relation_count)
+        eval_loss = evaluate_triples(triple_batch, embeddings, embedding_dim)
 
         # Save embeddings
         saver = tf.train.Saver({'embeddings': embeddings})
@@ -393,7 +400,7 @@ def infer_triples():
         with tf.Session() as sess:
             if FLAGS.debug:
                 sess = tf_debug.LocalCLIDebugWrapperSession(sess)
-                sess.add_tensor_filter("has_inf_or_nan", tf_debug.has_inf_or_nan)
+                sess.add_tensor_filter('has_inf_or_nan', tf_debug.has_inf_or_nan)
 
             init_op = tf.global_variables_initializer()
             sess.run(init_op)
