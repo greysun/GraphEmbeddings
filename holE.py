@@ -183,8 +183,8 @@ def get_embedding(layer_name, entity_ids, embeddings, embedding_dim):
 
 def complex_sigmoid(complex_tensor):
     sigmoid = tf.sigmoid(tf.reduce_sum(complex_tensor, 1))
-    magnitude = tf.sqrt(tf.square(tf.real(sigmoid)) + tf.square(tf.imag(sigmoid)))
-    print magnitude
+    sum_of_squares = tf.square(tf.real(sigmoid)) + tf.square(tf.imag(sigmoid))
+    magnitude = tf.sqrt(tf.clip_by_value(sum_of_squares, 1, 1e-6))
     return magnitude
 
 
