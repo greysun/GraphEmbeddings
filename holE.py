@@ -307,7 +307,7 @@ def run_training(type_to_ids_table, id_to_type_table, type_to_ids_constants, id_
             saver.restore(sess, FLAGS.output_dir + '/model.ckpt')
             # TODO: continue counting from last epoch
 
-        summary_writer = tf.summary.FileWriter(FLAGS.output_dir + '/graph', sess.graph)
+        summary_writer = tf.summary.FileWriter(FLAGS.output_dir, sess.graph)
 
         coord = tf.train.Coordinator()
         threads = tf.train.start_queue_runners(sess=sess, coord=coord)
@@ -323,22 +323,25 @@ def run_training(type_to_ids_table, id_to_type_table, type_to_ids_constants, id_
                     if batch % (batch_count / 4) == 0:
                         run_options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
                         run_metadata = tf.RunMetadata()
-                        _, batch_loss, summary = sess.run([optimizer, average_loss, summaries],
-                                                          options=run_options,
-                                                          run_metadata=run_metadata)
+                        _, batch_loss, train, corrupt, summary = sess.run([optimizer, average_loss, train_loss,
+                                                                           corrupt_loss, summaries],
+                                                                          options=run_options,
+                                                                          run_metadata=run_metadata)
                         step = '{}-{}'.format(epoch, batch)
                         summary_writer.add_run_metadata(run_metadata, step)
                         summary_writer.add_summary(summary, epoch * batch_count + batch)
                         print '\tSaved summary for step {}...'.format(step)
 
                     else:
-                        _, batch_loss = sess.run([optimizer, average_loss])
+                        _, batch_loss, train, corrupt = sess.run([optimizer, average_loss, train_loss, corrupt_loss])
                     batch_losses.append(batch_loss)
 
                 # Checkpoint
+                # TODO: verify embeddings are being saved properly
                 save_path = saver.save(sess, FLAGS.output_dir + '/model.ckpt', epoch)
                 projector.visualize_embeddings(summary_writer, projector_config)
-                print('Epoch {} Loss: {} (Model saved as {})'.format(epoch, np.mean(batch_losses), save_path))
+                print('Epoch {} Loss: {}, Train Loss: {}, Corrupt Loss: {} (Model saved as {})'
+                      .format(epoch, np.mean(batch_losses), train, corrupt, save_path))
 
         except tf.errors.OutOfRangeError:
             print('Done training -- epoch limit reached')
@@ -405,7 +408,7 @@ def infer_triples():
             sess.run(init_op)
 
             saver.restore(sess, FLAGS.output_dir + '/model.ckpt')
-            summary_writer = tf.summary.FileWriter(FLAGS.output_dir + '/eval_graph', sess.graph)
+            summary_writer = tf.summary.FileWriter(FLAGS.output_dir, sess.graph)
             projector.visualize_embeddings(summary_writer, projector_config)
 
             coord = tf.train.Coordinator()
