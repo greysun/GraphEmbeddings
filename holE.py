@@ -177,13 +177,14 @@ def get_embedding(layer_name, entity_ids, embeddings, embedding_dim):
 
 
 def complex_tanh(complex_tensor):
-    summed = tf.reduce_sum(tf.real(complex_tensor) + tf.imag(complex_tensor), 1)
+    summed = tf.reduce_sum(tf.real(complex_tensor) + tf.imag(complex_tensor), 1, keep_dims=True)
     return tf.tanh(summed)
 
 
 def circular_correlation(h, t):
     # these ops are GPU only!
-    return tf.ifft(tf.multiply(tf.conj(tf.fft(h)), tf.fft(t)))
+    ifft = tf.ifft(tf.multiply(tf.conj(tf.fft(h)), tf.fft(t)))
+    return ifft
 
 
 def evaluate_triples(triple_batch, embeddings, embedding_dim):
@@ -201,9 +202,8 @@ def evaluate_triples(triple_batch, embeddings, embedding_dim):
             # TransE
             loss = complex_tanh(head_embeddings + relation_embeddings - tail_embeddings)
         else:
-            loss = complex_tanh(tf.matmul(relation_embeddings,
-                                          circular_correlation(head_embeddings, tail_embeddings),
-                                          transpose_b=True))
+            loss = complex_tanh(tf.multiply(relation_embeddings,
+                                            circular_correlation(head_embeddings, tail_embeddings)))
         variable_summaries(loss)
         return loss
 
