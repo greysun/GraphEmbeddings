@@ -70,13 +70,15 @@ def get_the_data():
         for line in f:
             entity_count += 1
             index, diffbot_id, name, diffbot_type = line.split('\t')
-            type_char = diffbot_id[0]
             index = int(index)
-            type_to_ids[type_char].append(index)
-            id_to_type[index] = type_char
+            diffbot_type = diffbot_type.strip()
+            type_to_ids[diffbot_type].append(index)
+            id_to_type[index] = diffbot_type
 
     print 'Entities: ', entity_count - relation_count, 'Relations: ', relation_count, 'Triples: ', triple_count
     print 'Types: ', {k: len(v) for k, v in type_to_ids.iteritems()}
+    for k, v in type_to_ids.iteritems():
+        print k, np.random.choice(v, 10)
 
     with tf.name_scope('init_type_to_ids'):
         type_to_ids_table, type_to_ids_constants = init_table(type_to_ids, tf.string, tf.int64, 'type_to_ids',
@@ -367,7 +369,8 @@ def infer_triples():
             entity_count += 1
             index, diffbot_id, name, diffbot_type = line.split('\t')
             index = int(index)
-            type_to_ids[diffbot_type.strip()].append(index)
+            diffbot_type = diffbot_type.strip()
+            type_to_ids[diffbot_type].append(index)
             id_to_metadata[index] = diffbot_id + ' ' + name
 
     print 'Types: ', {k: len(v) for k, v in type_to_ids.iteritems()}
