@@ -246,8 +246,10 @@ def run_training(type_to_ids_table, id_to_type_table, type_to_ids_constants, id_
         # Sample triples
         triple_batch = tf.train.shuffle_batch([triples], batch_size,
                                               num_threads=FLAGS.reader_threads,
-                                              capacity=2*FLAGS.reader_threads*batch_size,
-                                              min_after_dequeue=batch_size,
+                                              capacity=2*triple_count,
+                                              #min_after_dequeue=batch_size,
+                                              # TODO: this probably won't scale
+                                              min_after_dequeue=triple_count,
                                               allow_smaller_final_batch=False)
 
         # Evaluate triples
@@ -330,7 +332,7 @@ def run_training(type_to_ids_table, id_to_type_table, type_to_ids_constants, id_
                         print '\tSaved summary for step {}...'.format(step)
 
                     else:
-                        _, batch_loss, t_l, c_l = sess.run([optimizer, average_loss, train_loss, corrupt_loss])
+                        _, batch_loss = sess.run([optimizer, average_loss])
                     batch_losses.append(batch_loss)
 
                 # Checkpoint
@@ -364,15 +366,15 @@ def infer_triples():
         for line in f:
             entity_count += 1
             index, diffbot_id, name, diffbot_type = line.split('\t')
-            type_char = diffbot_id[0]
             index = int(index)
-            type_to_ids[type_char].append(index)
+            type_to_ids[diffbot_type.strip()].append(index)
             id_to_metadata[index] = diffbot_id + ' ' + name
 
     print 'Types: ', {k: len(v) for k, v in type_to_ids.iteritems()}
 
     # Infer persons
-    infer_heads = type_to_ids['P'][:100]
+    # TODO: feed the entire stream in batches
+    infer_heads = np.random.choice(type_to_ids['P'], 100)
 
     # Infer skills
     infer_relations = [6]
@@ -404,8 +406,6 @@ def infer_triples():
             sess.run(init_op)
 
             saver.restore(sess, FLAGS.output_dir + '/model.ckpt')
-            summary_writer = tf.summary.FileWriter(FLAGS.output_dir, sess.graph)
-            projector.visualize_embeddings(summary_writer, projector_config)
 
             coord = tf.train.Coordinator()
             threads = tf.train.start_queue_runners(sess=sess, coord=coord)
@@ -472,7 +472,7 @@ if __name__ == '__main__':
     parser.add_argument(
         '--num_epochs',
         type=int,
-        default=10,
+        default=1000,
         help='Number of training epochs.'
     )
     parser.add_argument(
@@ -523,7 +523,7 @@ if __name__ == '__main__':
     parser.add_argument(
         '--inference-threshold',
         type=float,
-        default=0.99,
+        default=0.8,
         help='Infer new triples from the latest checkpoint model.'
     )
 
