@@ -204,6 +204,7 @@ def evaluate_triples(triple_batch, embeddings, embedding_dim):
             # TransE
             loss = complex_tanh(head_embeddings + relation_embeddings - tail_embeddings)
         else:
+            # TODO: try Hermitian dot-product
             loss = complex_tanh(tf.multiply(relation_embeddings,
                                             circular_correlation(head_embeddings, tail_embeddings)))
         variable_summaries(loss)
