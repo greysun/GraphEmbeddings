@@ -21,16 +21,16 @@ from tensorflow.python import debug as tf_debug
 FLAGS = None
 
 
-def init_table(dictionary, key_dtype, value_dtype, name, pad_int=False):
+def init_table(dictionary, key_dtype, value_dtype, name, type_to_ids=False):
     """Initializes the table variable and all of the inputs as constants."""
     padded_size = FLAGS.padded_size
 
     constants = []
-    if pad_int:
+    if type_to_ids:
         padded_size = FLAGS.padded_size
         for k, v in dictionary.iteritems():
             key = tf.constant(k, key_dtype)
-            # TODO: resample every epoch
+            # TODO: resample every epoch using fed dictionary
             v = [random.choice(v) for _ in range(padded_size)]
             value = tf.constant(v, value_dtype)
             constants.append((key, value))
@@ -39,7 +39,7 @@ def init_table(dictionary, key_dtype, value_dtype, name, pad_int=False):
         value = tf.constant(dictionary.values(), value_dtype)
         constants.append((key, value))
 
-    if pad_int:
+    if type_to_ids:
         default_value = tf.constant(padded_size * [-1], value_dtype)
     else:
         default_value = tf.constant('?', value_dtype)
@@ -60,7 +60,7 @@ def get_the_data():
     corrupt_triple_file = 'diffbot_data/triples.txt'
 
     type_to_ids = defaultdict(list)
-    id_to_type = defaultdict(list)
+    id_to_type = dict()
 
     relation_count = sum(1 for line in open(relation_file))
     triple_count = sum(1 for line in open(corrupt_triple_file))
@@ -83,13 +83,15 @@ def get_the_data():
 
     with tf.name_scope('init_type_to_ids'):
         type_to_ids_table, type_to_ids_constants = init_table(type_to_ids, tf.string, tf.int64, 'type_to_ids',
-                                                              pad_int=True)
+                                                              type_to_ids=True)
     with tf.name_scope('init_id_to_type'):
         id_to_type_table, id_to_type_constants = init_table(id_to_type, tf.int64, tf.string, 'id_to_type')
 
     with tf.name_scope('input'):
         # Load triples from triple_file TSV
         reader = tf.TextLineReader()
+        # TODO: shard files, TfrecordReader
+        # TODO: tf.records, move preprocessing to separate script
         filename_queue = tf.train.string_input_producer([corrupt_triple_file] * FLAGS.num_epochs)
         key, value = reader.read(filename_queue)
 
@@ -158,14 +160,14 @@ def corrupt_relations(relation_count, triples):
 
 
 def corrupt_batch(type_to_ids, id_to_type, relation_count, triples):
-    should_corrupt_relation = tf.less(tf.random_uniform([], 0, 1.0), 0.5)
+    should_corrupt_relation = tf.less(tf.random_uniform([], 0, 1.0), 0.3)
     return tf.cond(should_corrupt_relation,
                    lambda: corrupt_relations(relation_count, triples),
                    lambda: corrupt_entities(type_to_ids, id_to_type, triples))
 
 
 def init_embedding(name, entity_count, embedding_dim):
-    embedding = tf.get_variable(name, [entity_count, 2 * embedding_dim],
+    embedding = tf.get_variable(name, [entity_count, embedding_dim],
                                 initializer=tf.contrib.layers.xavier_initializer(uniform=False))
     return embedding
 
@@ -173,14 +175,13 @@ def init_embedding(name, entity_count, embedding_dim):
 def get_embedding(layer_name, entity_ids, embeddings, embedding_dim):
     with tf.device('/cpu:0'):
         entity_embeddings = tf.nn.embedding_lookup(embeddings, entity_ids, max_norm=1)
-        reshaped = tf.reshape(entity_embeddings, [-1, 2 * embedding_dim])
-        return tf.complex(tf.slice(reshaped, [0, 0], [-1, embedding_dim]),
-                          tf.slice(reshaped, [0, embedding_dim], [-1, embedding_dim]),
+        return tf.complex(entity_embeddings,
+                          tf.zeros([FLAGS.batch_size, 1, embedding_dim]),
                           name=layer_name)
 
 
 def complex_tanh(complex_tensor):
-    summed = tf.reduce_sum(tf.real(complex_tensor) + tf.imag(complex_tensor), 1, keep_dims=True)
+    summed = tf.reduce_sum(tf.real(complex_tensor), 1, keep_dims=True)
     return tf.tanh(summed)
 
 
@@ -205,7 +206,6 @@ def evaluate_triples(triple_batch, embeddings, embedding_dim):
             # TransE
             loss = complex_tanh(head_embeddings + relation_embeddings - tail_embeddings)
         else:
-            # TODO: try Hermitian dot-product
             loss = complex_tanh(tf.multiply(relation_embeddings,
                                             circular_correlation(head_embeddings, tail_embeddings)))
         variable_summaries(loss)
@@ -276,7 +276,7 @@ def run_training(type_to_ids_table, id_to_type_table, type_to_ids_constants, id_
                                                decay_rate=FLAGS.learning_decay_rate)
         tf.summary.scalar('learning_rate', lr_decay)
 
-        # TODO: experiment with other optimizers
+        # TODO: experiment with other optimizers (Adam, Adagrad)
         optimizer = tf.train.GradientDescentOptimizer(lr_decay).minimize(loss, global_step=global_step)
 
     summaries = tf.summary.merge_all()
@@ -307,6 +307,7 @@ def run_training(type_to_ids_table, id_to_type_table, type_to_ids_constants, id_
 
         summary_writer = tf.summary.FileWriter(FLAGS.output_dir, sess.graph)
 
+        # TODO: thread for resampling type_to_ids
         coord = tf.train.Coordinator()
         threads = tf.train.start_queue_runners(sess=sess, coord=coord)
 
@@ -326,6 +327,7 @@ def run_training(type_to_ids_table, id_to_type_table, type_to_ids_constants, id_
                 for batch in range(1, batch_count):
                     # Train and log batch to summary_writer
                     if batch % (batch_count / 16) == 0:
+                        # TODO: feed dictionary
                         run_options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
                         run_metadata = tf.RunMetadata()
                         model, batch_loss, summary = sess.run(
@@ -342,7 +344,6 @@ def run_training(type_to_ids_table, id_to_type_table, type_to_ids_constants, id_
                     batch_losses.append(batch_loss)
 
                 # Checkpoint
-                # TODO: verify embeddings are being saved properly
                 save_path = saver.save(sess, FLAGS.output_dir + '/model.ckpt', epoch)
 
                 print('Epoch {} Loss: {}, (Model saved as {})'.format(epoch, np.mean(batch_losses), save_path))
@@ -435,9 +436,11 @@ def infer_triples():
 
 
 def main(_):
+    # TODO: refactor to object
     if FLAGS.infer:
         infer_triples()
     else:
+        # TODO: return single object
         type_to_ids_table, id_to_type_table, type_to_ids_constants, id_to_type_constants, \
             entity_count, relation_count, triple_count, triples = get_the_data()
         run_training(type_to_ids_table, id_to_type_table, type_to_ids_constants, id_to_type_constants,
