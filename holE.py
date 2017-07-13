@@ -274,6 +274,7 @@ def run_training(type_to_ids_table, id_to_type_table, type_to_ids_constants, id_
         lr_decay = tf.train.inverse_time_decay(learning_rate, global_step,
                                                decay_steps=FLAGS.learning_decay_steps*batch_count,
                                                decay_rate=FLAGS.learning_decay_rate)
+        tf.summary.scalar('learning_rate', lr_decay)
 
         # TODO: experiment with other optimizers
         optimizer = tf.train.GradientDescentOptimizer(lr_decay).minimize(loss, global_step=global_step)
@@ -324,27 +325,27 @@ def run_training(type_to_ids_table, id_to_type_table, type_to_ids_constants, id_
                 batch_losses = []
                 for batch in range(1, batch_count):
                     # Train and log batch to summary_writer
-                    if batch % (batch_count / 4) == 0:
+                    if batch % (batch_count / 16) == 0:
                         run_options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
                         run_metadata = tf.RunMetadata()
-                        _, batch_loss, summary = sess.run([optimizer, average_loss, summaries],
-                                                          options=run_options,
-                                                          run_metadata=run_metadata)
+                        model, batch_loss, summary = sess.run(
+                            [optimizer, average_loss, summaries],
+                            options=run_options,
+                            run_metadata=run_metadata)
                         step = '{}-{}'.format(epoch, batch)
                         summary_writer.add_run_metadata(run_metadata, step)
                         summary_writer.add_summary(summary, epoch * batch_count + batch)
                         print '\tSaved summary for step {}...'.format(step)
 
                     else:
-                        _, batch_loss = sess.run([optimizer, average_loss])
+                        model, batch_loss = sess.run([optimizer, average_loss])
                     batch_losses.append(batch_loss)
 
                 # Checkpoint
                 # TODO: verify embeddings are being saved properly
                 save_path = saver.save(sess, FLAGS.output_dir + '/model.ckpt', epoch)
 
-                print('Epoch {} Loss: {}, (Model saved as {})'
-                      .format(epoch, np.mean(batch_losses), save_path))
+                print('Epoch {} Loss: {}, (Model saved as {})'.format(epoch, np.mean(batch_losses), save_path))
 
         except tf.errors.OutOfRangeError:
             print('Done training -- epoch limit reached')
