@@ -165,7 +165,7 @@ def corrupt_batch(type_to_ids, id_to_type, relation_count, triples):
 
 
 def init_embedding(name, entity_count, embedding_dim):
-    embedding = tf.get_variable(name, [entity_count, 2 * embedding_dim],
+    embedding = tf.get_variable(name, [entity_count, embedding_dim],
                                 initializer=tf.contrib.layers.xavier_initializer(uniform=False))
     return embedding
 
@@ -174,7 +174,7 @@ def get_embedding(layer_name, entity_ids, embeddings, embedding_dim):
     with tf.device('/cpu:0'):
         entity_embeddings = tf.nn.embedding_lookup(embeddings, entity_ids, max_norm=1)
         return tf.complex(entity_embeddings,
-                          tf.zeros([FLAGS.batch_size, embedding_dim]),
+                          tf.zeros([FLAGS.batch_size, 1, embedding_dim]),
                           name=layer_name)
 
 
