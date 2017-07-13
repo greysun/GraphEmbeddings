@@ -493,7 +493,7 @@ if __name__ == '__main__':
     parser.add_argument(
         '--output_dir',
         type=str,
-        default='holE',
+        default='holE-latest',
         help='Tensorboard Summary directory.'
     )
     parser.add_argument(
