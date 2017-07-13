@@ -163,8 +163,7 @@ def complex_tanh(complex_tensor):
 
 def circular_correlation(h, t):
     # these ops are GPU only!
-    ifft = tf.ifft(tf.multiply(tf.conj(tf.fft(h)), tf.fft(t)))
-    return ifft
+    return tf.ifft(tf.multiply(tf.conj(tf.fft(h)), tf.fft(t)))
 
 
 def evaluate_triples(triple_batch, embeddings, embedding_dim):
@@ -240,7 +239,6 @@ def run_training(data):
         triple_batch = tf.train.shuffle_batch([data.triples], batch_size,
                                               num_threads=FLAGS.reader_threads,
                                               capacity=2*data.triple_count,
-                                              #min_after_dequeue=batch_size,
                                               # TODO: this probably won't scale
                                               min_after_dequeue=data.triple_count,
                                               allow_smaller_final_batch=False)
@@ -270,18 +268,17 @@ def run_training(data):
 
     summaries = tf.summary.merge_all()
 
+    init_op = tf.global_variables_initializer()
+
     # Save embeddings
     saver = tf.train.Saver({'embeddings': embeddings})
 
-    # TODO: supervisor freezes graph -- need to populate table inside session
-    # supervisor = tf.train.Supervisor(logdir=FLAGS.output_dir)
-    # with supervisor.managed_session() as sess:
-    with tf.Session() as sess:
+    supervisor = tf.train.Supervisor(logdir=FLAGS.output_dir)
+    with supervisor.managed_session() as sess:
         if FLAGS.debug:
             sess = tf_debug.LocalCLIDebugWrapperSession(sess)
             sess.add_tensor_filter('has_inf_or_nan', tf_debug.has_inf_or_nan)
 
-        init_op = tf.global_variables_initializer()
         sess.run(init_op)
 
         # Load the previous model if resume_checkpoint=True
@@ -291,14 +288,18 @@ def run_training(data):
 
         summary_writer = tf.summary.FileWriter(FLAGS.output_dir, sess.graph)
 
-        # TODO: thread for resampling type_to_ids
+        # TODO: separate thread for shuffling type_to_ids
         coord = tf.train.Coordinator()
         threads = tf.train.start_queue_runners(sess=sess, coord=coord)
 
         try:
+            # Populate id_to_type mapping
+            feed_dict = {id_to_type_keys: np.array(data.id_to_type.keys()),
+                         id_to_type_values: np.array(data.id_to_type.values())}
+            sess.run([id_to_type_insert], feed_dict)
+
             epoch = 0
-            # while not supervisor.should_stop():
-            while True:
+            while not supervisor.should_stop():
                 epoch += 1
 
                 projector_config = projector.ProjectorConfig()
@@ -311,10 +312,8 @@ def run_training(data):
                 padded_values = np.array([[random.choice(v) for _ in range(FLAGS.padded_size)]
                                           for v in data.type_to_ids.values()])
                 feed_dict = {type_to_ids_keys: np.array(data.type_to_ids.keys()),
-                             type_to_ids_values: np.array(padded_values),
-                             id_to_type_keys: np.array(data.id_to_type.keys()),
-                             id_to_type_values: np.array(data.id_to_type.values())}
-                sess.run([type_to_ids_insert, id_to_type_insert], feed_dict)
+                             type_to_ids_values: np.array(padded_values)}
+                sess.run([type_to_ids_insert], feed_dict)
 
                 batch_losses = []
                 for batch in range(1, batch_count):
@@ -332,7 +331,7 @@ def run_training(data):
                         print '\tSaved summary for step {}...'.format(step)
 
                     else:
-                        model, batch_loss = sess.run([optimizer, average_loss, triple_batch, corrupt_triples])
+                        model, batch_loss = sess.run([optimizer, average_loss])
                     batch_losses.append(batch_loss)
 
                 # Checkpoint
@@ -428,7 +427,7 @@ def infer_triples():
 
 
 def main(_):
-    # TODO: refactor to object
+    # TODO: refactor model in to object
     if FLAGS.infer:
         infer_triples()
     else:
