@@ -39,9 +39,9 @@ def init_table(key_dtype, value_dtype, name, type_to_ids=False):
 
 
 def get_the_data():
-    entity_file = 'diffbot_data/entity_metadata.tsv'
-    relation_file = 'diffbot_data/relation_ids.txt'
-    corrupt_triple_file = 'diffbot_data/triples.txt'
+    entity_file = os.path.join(FLAGS.data_dir, 'entity_metadata.tsv')
+    relation_file = os.path.join(FLAGS.data_dir, 'relation_ids.txt')
+    corrupt_triple_file = os.path.join(FLAGS.data_dir, 'triples.txt')
 
     data = HolEData()
 
@@ -305,7 +305,7 @@ def run_training(data):
                 projector_config = projector.ProjectorConfig()
                 embeddings_config = projector_config.embeddings.add()
                 embeddings_config.tensor_name = embeddings.name
-                embeddings.metadata_path = 'diffbot_data/entity_metadata.tsv'
+                embeddings.metadata_path = os.path.join(FLAGS.data_dir, 'entity_metadata.tsv')
                 projector.visualize_embeddings(summary_writer, projector_config)
 
                 # Shuffle the available corrupt entity ids and insert every epoch
@@ -352,7 +352,7 @@ def infer_triples():
     # TODO: this should be loaded from the saved model
     embedding_dim = FLAGS.embedding_dim
     batch_size = FLAGS.batch_size
-    entity_file = 'diffbot_data/entity_metadata.tsv'
+    entity_file = os.path.join(FLAGS.data_dir, 'entity_metadata.tsv')
 
     type_to_ids = defaultdict(list)
     id_to_metadata = dict()
@@ -495,6 +495,12 @@ if __name__ == '__main__':
         type=str,
         default='holE-latest',
         help='Tensorboard Summary directory.'
+    )
+    parser.add_argument(
+        '--data_dir',
+        type=str,
+        default='diffbot_data/kg_0.01',
+        help='Input data directory. Must contain {triples.txt, entity_metadata.tsv, relation_ids.txt}'
     )
     parser.add_argument(
         '--reader_threads',
