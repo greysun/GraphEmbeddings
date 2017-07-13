@@ -173,14 +173,13 @@ def init_embedding(name, entity_count, embedding_dim):
 def get_embedding(layer_name, entity_ids, embeddings, embedding_dim):
     with tf.device('/cpu:0'):
         entity_embeddings = tf.nn.embedding_lookup(embeddings, entity_ids, max_norm=1)
-        reshaped = tf.reshape(entity_embeddings, [-1, 2 * embedding_dim])
-        return tf.complex(tf.slice(reshaped, [0, 0], [-1, embedding_dim]),
-                          tf.slice(reshaped, [0, embedding_dim], [-1, embedding_dim]),
+        return tf.complex(entity_embeddings,
+                          tf.zeros([FLAGS.batch_size, embedding_dim]),
                           name=layer_name)
 
 
 def complex_tanh(complex_tensor):
-    summed = tf.reduce_sum(tf.real(complex_tensor) + tf.imag(complex_tensor), 1, keep_dims=True)
+    summed = tf.reduce_sum(tf.real(complex_tensor), 1, keep_dims=True)
     return tf.tanh(summed)
 
 
