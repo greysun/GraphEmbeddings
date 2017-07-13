@@ -30,6 +30,7 @@ def init_table(dictionary, key_dtype, value_dtype, name, pad_int=False):
         padded_size = FLAGS.padded_size
         for k, v in dictionary.iteritems():
             key = tf.constant(k, key_dtype)
+            # TODO: resample every epoch
             v = [random.choice(v) for _ in range(padded_size)]
             value = tf.constant(v, value_dtype)
             constants.append((key, value))
