@@ -1,0 +1,3 @@
+For use with prepareSubset-20170712
+
+View with `tensorboard --logdir holeE-20170712-gpu`
