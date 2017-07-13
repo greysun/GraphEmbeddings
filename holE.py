@@ -21,37 +21,21 @@ from tensorflow.python import debug as tf_debug
 FLAGS = None
 
 
-def init_table(dictionary, key_dtype, value_dtype, name, type_to_ids=False):
+class HolEData:
+    def __init__(self):
+        self.type_to_ids = defaultdict(list)
+        self.id_to_type = dict()
+        self.entity_count = 0
+        self.relation_count = 0
+        self.triple_count = 0
+        self.triples = None
+
+
+def init_table(key_dtype, value_dtype, name, type_to_ids=False):
     """Initializes the table variable and all of the inputs as constants."""
-    padded_size = FLAGS.padded_size
-
-    constants = []
-    if type_to_ids:
-        padded_size = FLAGS.padded_size
-        for k, v in dictionary.iteritems():
-            key = tf.constant(k, key_dtype)
-            # TODO: resample every epoch using fed dictionary
-            v = [random.choice(v) for _ in range(padded_size)]
-            value = tf.constant(v, value_dtype)
-            constants.append((key, value))
-    else:
-        key = tf.constant(dictionary.keys(), key_dtype)
-        value = tf.constant(dictionary.values(), value_dtype)
-        constants.append((key, value))
-
-    if type_to_ids:
-        default_value = tf.constant(padded_size * [-1], value_dtype)
-    else:
-        default_value = tf.constant('?', value_dtype)
-
-    table = tf.contrib.lookup.MutableHashTable(key_dtype=key_dtype, value_dtype=value_dtype,
-                                               default_value=default_value, shared_name=name, name=name)
-    return table, constants
-
-
-def populate_table(constants, table):
-    for key, value in constants:
-        table.insert(key, value).run()
+    default_value = tf.constant(FLAGS.padded_size * [-1], value_dtype) if type_to_ids else tf.constant('?', value_dtype)
+    return tf.contrib.lookup.MutableHashTable(key_dtype=key_dtype, value_dtype=value_dtype,
+                                              default_value=default_value, shared_name=name, name=name)
 
 
 def get_the_data():
@@ -59,33 +43,26 @@ def get_the_data():
     relation_file = 'diffbot_data/relation_ids.txt'
     corrupt_triple_file = 'diffbot_data/triples.txt'
 
-    type_to_ids = defaultdict(list)
-    id_to_type = dict()
+    data = HolEData()
 
-    relation_count = sum(1 for line in open(relation_file))
-    triple_count = sum(1 for line in open(corrupt_triple_file))
+    data.relation_count = sum(1 for line in open(relation_file))
+    data.triple_count = sum(1 for line in open(corrupt_triple_file))
 
-    entity_count = 0
     with open(entity_file, 'r') as f:
         next(f)  # skip header
         for line in f:
-            entity_count += 1
+            data.entity_count += 1
             index, diffbot_id, name, diffbot_type = line.split('\t')
             index = int(index)
             diffbot_type = diffbot_type.strip()
-            type_to_ids[diffbot_type].append(index)
-            id_to_type[index] = diffbot_type
+            data.type_to_ids[diffbot_type].append(index)
+            data.id_to_type[index] = diffbot_type
 
-    print 'Entities: ', entity_count - relation_count, 'Relations: ', relation_count, 'Triples: ', triple_count
-    print 'Types: ', {k: len(v) for k, v in type_to_ids.iteritems()}
-    for k, v in type_to_ids.iteritems():
+    print 'Entities: ', data.entity_count - data.relation_count, 'Relations: ', data.relation_count, \
+        'Triples: ', data.triple_count
+    print 'Types: ', {k: len(v) for k, v in data.type_to_ids.iteritems()}
+    for k, v in data.type_to_ids.iteritems():
         print k, np.random.choice(v, 10)
-
-    with tf.name_scope('init_type_to_ids'):
-        type_to_ids_table, type_to_ids_constants = init_table(type_to_ids, tf.string, tf.int64, 'type_to_ids',
-                                                              type_to_ids=True)
-    with tf.name_scope('init_id_to_type'):
-        id_to_type_table, id_to_type_constants = init_table(id_to_type, tf.int64, tf.string, 'id_to_type')
 
     with tf.name_scope('input'):
         # Load triples from triple_file TSV
@@ -100,14 +77,13 @@ def get_the_data():
                            tf.constant([], dtype=tf.int32)]
 
         head_ids, tail_ids, relation_ids = tf.decode_csv(value, column_defaults, field_delim='\t')
-        triples = tf.stack([head_ids, tail_ids, relation_ids])
+        data.triples = tf.stack([head_ids, tail_ids, relation_ids])
 
-    return type_to_ids_table, id_to_type_table, type_to_ids_constants, id_to_type_constants,\
-        entity_count, relation_count, triple_count, triples
+    return data
 
 
 def corrupt_heads(type_to_ids, id_to_type, triples):
-    # TODO: need to avoid type-safety for relation 'instance_of'
+    # TODO: need to avoid same type entities for relation 'instance_of'
     with tf.name_scope('head'):
         head_column = tf.cast(tf.slice(triples, [0, 0], [-1, 1]), tf.int64)
         tail_column = tf.slice(triples, [0, 1], [-1, 1])
@@ -224,14 +200,13 @@ def variable_summaries(var):
         tf.summary.histogram('histogram', var)
 
 
-def run_training(type_to_ids_table, id_to_type_table, type_to_ids_constants, id_to_type_constants,
-                 entity_count, relation_count, triple_count, triples):
+def run_training(data):
     # Initialize parameters
     margin = FLAGS.margin
     embedding_dim = FLAGS.embedding_dim
     learning_rate = FLAGS.learning_rate
     batch_size = FLAGS.batch_size
-    batch_count = triple_count / batch_size
+    batch_count = data.triple_count / batch_size
     print 'Embedding dimension: ', embedding_dim, 'Batch size: ', batch_size, 'Batch count: ', batch_count
 
     # Warning: this will clobber existing summaries
@@ -244,23 +219,37 @@ def run_training(type_to_ids_table, id_to_type_table, type_to_ids_constants, id_
             raise
 
     # Initialize embeddings (TF doesn't support complex embeddings, split real part and imaginary part)
-    embeddings = init_embedding('embeddings', entity_count, embedding_dim)
+    embeddings = init_embedding('embeddings', data.entity_count, embedding_dim)
+
+    # Initialize tables for type-safe corruption (to avoid junk triples like "Jeff", "Employer", "Java")
+    type_to_ids_table = init_table(tf.string, tf.int64, 'type_to_ids', type_to_ids=True)
+    id_to_type_table = init_table(tf.int64, tf.string, 'id_to_type')
 
     with tf.name_scope('batch'):
+        with tf.name_scope('tables'):
+            with tf.name_scope('type_to_ids'):
+                type_to_ids_keys = tf.placeholder(tf.string, [len(data.type_to_ids)], 'keys')
+                type_to_ids_values = tf.placeholder(tf.int64, [len(data.type_to_ids), FLAGS.padded_size], 'values')
+                type_to_ids_insert = type_to_ids_table.insert(type_to_ids_keys, type_to_ids_values)
+            with tf.name_scope('id_to_type'):
+                id_to_type_keys = tf.placeholder(tf.int64, [data.entity_count], 'keys')
+                id_to_type_values = tf.placeholder(tf.string, [data.entity_count], 'values')
+                id_to_type_insert = id_to_type_table.insert(id_to_type_keys, id_to_type_values)
+
         # Sample triples
-        triple_batch = tf.train.shuffle_batch([triples], batch_size,
+        triple_batch = tf.train.shuffle_batch([data.triples], batch_size,
                                               num_threads=FLAGS.reader_threads,
-                                              capacity=2*triple_count,
+                                              capacity=2*data.triple_count,
                                               #min_after_dequeue=batch_size,
                                               # TODO: this probably won't scale
-                                              min_after_dequeue=triple_count,
+                                              min_after_dequeue=data.triple_count,
                                               allow_smaller_final_batch=False)
 
         # Evaluate triples
         with tf.name_scope('train'):
             train_loss = evaluate_triples(triple_batch, embeddings, embedding_dim)
         with (tf.name_scope('corrupt')):
-            corrupt_triples = corrupt_batch(type_to_ids_table, id_to_type_table, relation_count, triple_batch)
+            corrupt_triples = corrupt_batch(type_to_ids_table, id_to_type_table, data.relation_count, triple_batch)
             corrupt_loss = evaluate_triples(corrupt_triples, embeddings, embedding_dim)
 
         # Score and minimize hinge-loss
@@ -292,11 +281,6 @@ def run_training(type_to_ids_table, id_to_type_table, type_to_ids_constants, id_
             sess = tf_debug.LocalCLIDebugWrapperSession(sess)
             sess.add_tensor_filter('has_inf_or_nan', tf_debug.has_inf_or_nan)
 
-        with tf.name_scope('insert_id_to_type'):
-            populate_table(id_to_type_constants, id_to_type_table)
-        with tf.name_scope('insert_type_to_ids'):
-            populate_table(type_to_ids_constants, type_to_ids_table)
-
         init_op = tf.global_variables_initializer()
         sess.run(init_op)
 
@@ -323,11 +307,19 @@ def run_training(type_to_ids_table, id_to_type_table, type_to_ids_constants, id_
                 embeddings.metadata_path = 'diffbot_data/entity_metadata.tsv'
                 projector.visualize_embeddings(summary_writer, projector_config)
 
+                # Shuffle the available corrupt entity ids and insert every epoch
+                padded_values = np.array([[random.choice(v) for _ in range(FLAGS.padded_size)]
+                                          for v in data.type_to_ids.values()])
+                feed_dict = {type_to_ids_keys: np.array(data.type_to_ids.keys()),
+                             type_to_ids_values: np.array(padded_values),
+                             id_to_type_keys: np.array(data.id_to_type.keys()),
+                             id_to_type_values: np.array(data.id_to_type.values())}
+                sess.run([type_to_ids_insert, id_to_type_insert], feed_dict)
+
                 batch_losses = []
                 for batch in range(1, batch_count):
                     # Train and log batch to summary_writer
                     if batch % (batch_count / 16) == 0:
-                        # TODO: feed dictionary
                         run_options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
                         run_metadata = tf.RunMetadata()
                         model, batch_loss, summary = sess.run(
@@ -340,7 +332,7 @@ def run_training(type_to_ids_table, id_to_type_table, type_to_ids_constants, id_
                         print '\tSaved summary for step {}...'.format(step)
 
                     else:
-                        model, batch_loss = sess.run([optimizer, average_loss])
+                        model, batch_loss = sess.run([optimizer, average_loss, triple_batch, corrupt_triples])
                     batch_losses.append(batch_loss)
 
                 # Checkpoint
@@ -440,11 +432,8 @@ def main(_):
     if FLAGS.infer:
         infer_triples()
     else:
-        # TODO: return single object
-        type_to_ids_table, id_to_type_table, type_to_ids_constants, id_to_type_constants, \
-            entity_count, relation_count, triple_count, triples = get_the_data()
-        run_training(type_to_ids_table, id_to_type_table, type_to_ids_constants, id_to_type_constants,
-                     entity_count, relation_count, triple_count, triples)
+        training_data = get_the_data()
+        run_training(training_data)
 
 
 if __name__ == '__main__':
