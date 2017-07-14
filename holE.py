@@ -216,23 +216,24 @@ def run_training(data):
         if e.errno != errno.EEXIST:
             raise
 
-    # Initialize embeddings (TF doesn't support complex embeddings, split real part and imaginary part)
-    embeddings = init_embedding('embeddings', data.entity_count, embedding_dim)
+    with tf.device('/cpu'):
+        # Initialize embeddings (TF doesn't support complex embeddings, split real part and imaginary part)
+        embeddings = init_embedding('embeddings', data.entity_count, embedding_dim)
 
-    # Initialize tables for type-safe corruption (to avoid junk triples like "Jeff", "Employer", "Java")
-    with tf.name_scope('tables'):
-        with tf.name_scope('type_to_ids'):
-            type_to_ids_keys = tf.placeholder(tf.string, [len(data.type_to_ids)], 'keys')
-            type_to_ids_values = tf.placeholder(tf.int64, [len(data.type_to_ids), FLAGS.padded_size], 'values')
+        # Initialize tables for type-safe corruption (to avoid junk triples like "Jeff", "Employer", "Java")
+        with tf.name_scope('tables'):
+            with tf.name_scope('type_to_ids'):
+                type_to_ids_keys = tf.placeholder(tf.string, [len(data.type_to_ids)], 'keys')
+                type_to_ids_values = tf.placeholder(tf.int64, [len(data.type_to_ids), FLAGS.padded_size], 'values')
 
-            type_to_ids_table = init_table(tf.string, tf.int64, 'type_to_ids', type_to_ids=True)
-            type_to_ids_insert = type_to_ids_table.insert(type_to_ids_keys, type_to_ids_values)
-        with tf.name_scope('id_to_type'):
-            id_to_type_keys = tf.placeholder(tf.int64, [data.entity_count], 'keys')
-            id_to_type_values = tf.placeholder(tf.string, [data.entity_count], 'values')
+                type_to_ids_table = init_table(tf.string, tf.int64, 'type_to_ids', type_to_ids=True)
+                type_to_ids_insert = type_to_ids_table.insert(type_to_ids_keys, type_to_ids_values)
+            with tf.name_scope('id_to_type'):
+                id_to_type_keys = tf.placeholder(tf.int64, [data.entity_count], 'keys')
+                id_to_type_values = tf.placeholder(tf.string, [data.entity_count], 'values')
 
-            id_to_type_table = init_table(tf.int64, tf.string, 'id_to_type')
-            id_to_type_insert = id_to_type_table.insert(id_to_type_keys, id_to_type_values)
+                id_to_type_table = init_table(tf.int64, tf.string, 'id_to_type')
+                id_to_type_insert = id_to_type_table.insert(id_to_type_keys, id_to_type_values)
 
     with tf.name_scope('batch'):
         # Sample triples
