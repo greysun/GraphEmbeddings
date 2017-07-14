@@ -1,0 +1,3 @@
+Prepare subset run, reverted back to complex embedding
+
+Loss went to e-10?
