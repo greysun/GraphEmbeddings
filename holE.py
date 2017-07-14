@@ -337,7 +337,6 @@ def run_training(data):
 
                 # Checkpoint
                 save_path = saver.save(sess, FLAGS.output_dir + '/model.ckpt', epoch)
-
                 print('Epoch {} Loss: {}, (Model saved as {})'.format(epoch, np.mean(batch_losses), save_path))
 
         except tf.errors.OutOfRangeError:
@@ -363,9 +362,8 @@ def infer_triples():
         next(f)  # skip header
         for line in f:
             entity_count += 1
-            index, diffbot_id, name, diffbot_type = line.split('\t')
+            index, diffbot_id, name, diffbot_type = line.strip().split('\t')
             index = int(index)
-            diffbot_type = diffbot_type.strip()
             type_to_ids[diffbot_type].append(index)
             id_to_metadata[index] = diffbot_id + ' ' + name
 
@@ -387,7 +385,7 @@ def infer_triples():
         embeddings = init_embedding('embeddings', entity_count, embedding_dim)
 
         triple_batch = tf.train.batch([triples], batch_size,
-                                      capacity=4 * batch_size,
+                                      capacity=4*batch_size,
                                       enqueue_many=True,
                                       allow_smaller_final_batch=False)
 
@@ -452,7 +450,7 @@ if __name__ == '__main__':
     parser.add_argument(
         '--learning_decay_steps',
         type=float,
-        default=32,
+        default=8,
         help='Learning rate decay steps (in epochs).'
     )
     parser.add_argument(
