@@ -157,7 +157,7 @@ def get_embedding(layer_name, entity_ids, embeddings, embedding_dim):
 
 
 def complex_tanh(complex_tensor):
-    summed = tf.reduce_sum(tf.real(complex_tensor) + tf.complex(complex_tensor), 1, keep_dims=True)
+    summed = tf.reduce_sum(tf.real(complex_tensor) + tf.imag(complex_tensor), 1, keep_dims=True)
     return tf.tanh(summed)
 
 
