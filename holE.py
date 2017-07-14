@@ -143,19 +143,21 @@ def corrupt_batch(type_to_ids, id_to_type, relation_count, triples):
 
 
 def init_embedding(name, entity_count, embedding_dim):
-    embedding = tf.get_variable(name, [entity_count, embedding_dim],
+    embedding = tf.get_variable(name, [entity_count, 2*embedding_dim],
                                 initializer=tf.contrib.layers.xavier_initializer(uniform=False))
     return embedding
 
 
 def get_embedding(layer_name, entity_ids, embeddings, embedding_dim):
     entity_embeddings = tf.reshape(tf.nn.embedding_lookup(embeddings, entity_ids, max_norm=1),
-                                   [FLAGS.batch_size, embedding_dim])
-    return tf.complex(entity_embeddings, tf.zeros([FLAGS.batch_size, embedding_dim]), name=layer_name)
+                                   [FLAGS.batch_size, 2*embedding_dim])
+    real_embeddings = tf.slice(entity_embeddings, [0, 0], [-1, embedding_dim])
+    imag_embeddings = tf.slice(entity_embeddings, [0, embedding_dim], [-1, embedding_dim]),
+    return tf.complex(real_embeddings, imag_embeddings, name=layer_name)
 
 
 def complex_tanh(complex_tensor):
-    summed = tf.reduce_sum(tf.real(complex_tensor), 1, keep_dims=True)
+    summed = tf.reduce_sum(tf.real(complex_tensor) + tf.complex(complex_tensor), 1, keep_dims=True)
     return tf.tanh(summed)
 
 
