@@ -62,7 +62,7 @@ def get_the_data():
         'Triples: ', data.triple_count
     print 'Types: ', {k: len(v) for k, v in data.type_to_ids.iteritems()}
     for k, v in data.type_to_ids.iteritems():
-        print k, np.random.choice(v, 10)
+        print "\t", k, np.random.choice(v, 10)
 
     with tf.name_scope('input'):
         # Load triples from triple_file TSV
@@ -149,11 +149,9 @@ def init_embedding(name, entity_count, embedding_dim):
 
 
 def get_embedding(layer_name, entity_ids, embeddings, embedding_dim):
-    with tf.device('/cpu:0'):
-        entity_embeddings = tf.nn.embedding_lookup(embeddings, entity_ids, max_norm=1)
-        return tf.complex(entity_embeddings,
-                          tf.zeros([FLAGS.batch_size, 1, embedding_dim]),
-                          name=layer_name)
+    entity_embeddings = tf.reshape(tf.nn.embedding_lookup(embeddings, entity_ids, max_norm=1),
+                                   [FLAGS.batch_size, embedding_dim])
+    return tf.complex(entity_embeddings, tf.zeros([FLAGS.batch_size, embedding_dim]), name=layer_name)
 
 
 def complex_tanh(complex_tensor):
@@ -168,12 +166,13 @@ def circular_correlation(h, t):
 
 def evaluate_triples(triple_batch, embeddings, embedding_dim):
     # Load embeddings
-    head_column = tf.slice(triple_batch, [0, 0], [-1, 1], name='h_id')
-    head_embeddings = get_embedding('h', head_column, embeddings, embedding_dim)
-    tail_column = tf.slice(triple_batch, [0, 1], [-1, 1], name='t_id')
-    tail_embeddings = get_embedding('t', tail_column, embeddings, embedding_dim)
-    relation_column = tf.slice(triple_batch, [0, 2], [-1, 1], name='r_id')
-    relation_embeddings = get_embedding('r', relation_column, embeddings, embedding_dim)
+    with tf.device('/cpu'):
+        head_column = tf.slice(triple_batch, [0, 0], [-1, 1], name='h_id')
+        head_embeddings = get_embedding('h', head_column, embeddings, embedding_dim)
+        tail_column = tf.slice(triple_batch, [0, 1], [-1, 1], name='t_id')
+        tail_embeddings = get_embedding('t', tail_column, embeddings, embedding_dim)
+        relation_column = tf.slice(triple_batch, [0, 2], [-1, 1], name='r_id')
+        relation_embeddings = get_embedding('r', relation_column, embeddings, embedding_dim)
 
     # Compute loss
     with tf.name_scope('eval'):
@@ -221,20 +220,21 @@ def run_training(data):
     embeddings = init_embedding('embeddings', data.entity_count, embedding_dim)
 
     # Initialize tables for type-safe corruption (to avoid junk triples like "Jeff", "Employer", "Java")
-    type_to_ids_table = init_table(tf.string, tf.int64, 'type_to_ids', type_to_ids=True)
-    id_to_type_table = init_table(tf.int64, tf.string, 'id_to_type')
+    with tf.name_scope('tables'):
+        with tf.name_scope('type_to_ids'):
+            type_to_ids_keys = tf.placeholder(tf.string, [len(data.type_to_ids)], 'keys')
+            type_to_ids_values = tf.placeholder(tf.int64, [len(data.type_to_ids), FLAGS.padded_size], 'values')
+
+            type_to_ids_table = init_table(tf.string, tf.int64, 'type_to_ids', type_to_ids=True)
+            type_to_ids_insert = type_to_ids_table.insert(type_to_ids_keys, type_to_ids_values)
+        with tf.name_scope('id_to_type'):
+            id_to_type_keys = tf.placeholder(tf.int64, [data.entity_count], 'keys')
+            id_to_type_values = tf.placeholder(tf.string, [data.entity_count], 'values')
+
+            id_to_type_table = init_table(tf.int64, tf.string, 'id_to_type')
+            id_to_type_insert = id_to_type_table.insert(id_to_type_keys, id_to_type_values)
 
     with tf.name_scope('batch'):
-        with tf.name_scope('tables'):
-            with tf.name_scope('type_to_ids'):
-                type_to_ids_keys = tf.placeholder(tf.string, [len(data.type_to_ids)], 'keys')
-                type_to_ids_values = tf.placeholder(tf.int64, [len(data.type_to_ids), FLAGS.padded_size], 'values')
-                type_to_ids_insert = type_to_ids_table.insert(type_to_ids_keys, type_to_ids_values)
-            with tf.name_scope('id_to_type'):
-                id_to_type_keys = tf.placeholder(tf.int64, [data.entity_count], 'keys')
-                id_to_type_values = tf.placeholder(tf.string, [data.entity_count], 'values')
-                id_to_type_insert = id_to_type_table.insert(id_to_type_keys, id_to_type_values)
-
         # Sample triples
         triple_batch = tf.train.shuffle_batch([data.triples], batch_size,
                                               num_threads=FLAGS.reader_threads,
