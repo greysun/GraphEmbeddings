@@ -166,7 +166,7 @@ def circular_correlation(h, t):
     return tf.ifft(tf.multiply(tf.conj(tf.fft(h)), tf.fft(t)))
 
 
-def evaluate_triples(triple_batch, embeddings, embedding_dim):
+def evaluate_triples(triple_batch, embeddings, embedding_dim, label=None):
     # Load embeddings
     with tf.device('/cpu'):
         head_column = tf.slice(triple_batch, [0, 0], [-1, 1], name='h_id')
@@ -180,12 +180,19 @@ def evaluate_triples(triple_batch, embeddings, embedding_dim):
     with tf.name_scope('eval'):
         if FLAGS.cpu:
             # TransE
-            loss = complex_tanh(head_embeddings + relation_embeddings - tail_embeddings)
+            score = head_embeddings + relation_embeddings - tail_embeddings
         else:
-            loss = complex_tanh(tf.multiply(relation_embeddings,
-                                            circular_correlation(head_embeddings, tail_embeddings)))
+            score = tf.multiply(relation_embeddings, circular_correlation(head_embeddings, tail_embeddings))
+
+        if FLAGS.log_loss and label:
+            loss = tf.log(1. + tf.exp(tf.scalar_mul(label, score)))
+            # TODO: regularization
+        else:
+            loss = complex_tanh(score)
+
         variable_summaries(loss)
-        return loss
+        
+    return loss
 
 
 def variable_summaries(var):
@@ -247,14 +254,28 @@ def run_training(data):
                                               allow_smaller_final_batch=False)
 
         # Evaluate triples
-        with tf.name_scope('train'):
-            train_loss = evaluate_triples(triple_batch, embeddings, embedding_dim)
-        with (tf.name_scope('corrupt')):
-            corrupt_triples = corrupt_batch(type_to_ids_table, id_to_type_table, data.relation_count, triple_batch)
-            corrupt_loss = evaluate_triples(corrupt_triples, embeddings, embedding_dim)
+        if FLAGS.log_loss:
+            losses = []
+            with tf.name_scope('train'):
+                train_loss = evaluate_triples(triple_batch, embeddings, embedding_dim, 1)
+                losses.append(train_loss)
+            with (tf.name_scope('corrupt')):
+                for i in range(FLAGS.negative_ratio):
+                    corrupt_triples = corrupt_batch(type_to_ids_table, id_to_type_table,
+                                                    data.relation_count, triple_batch)
+                    corrupt_loss = evaluate_triples(corrupt_triples, embeddings, embedding_dim, -1)
+                    losses.append(corrupt_loss)
 
-        # Score and minimize hinge-loss
-        loss = tf.maximum(train_loss - corrupt_loss + margin, 0)
+            loss = tf.concat(losses, 0)
+        else:
+            with tf.name_scope('train'):
+                train_loss = evaluate_triples(triple_batch, embeddings, embedding_dim)
+            with (tf.name_scope('corrupt')):
+                corrupt_triples = corrupt_batch(type_to_ids_table, id_to_type_table, data.relation_count, triple_batch)
+                corrupt_loss = evaluate_triples(corrupt_triples, embeddings, embedding_dim)
+
+            # Score and minimize hinge-loss
+            loss = tf.maximum(train_loss - corrupt_loss + margin, 0)
 
         # Log the total batch loss
         variable_summaries(loss)
@@ -478,6 +499,17 @@ if __name__ == '__main__':
         type=int,
         default=128,
         help='Embedding dimension.'
+    )
+    parser.add_argument(
+        '--log_loss',
+        action='store_true',
+        help='Use logistic loss. Otherwise, use pairwise ranking loss.'
+    )
+    parser.add_argument(
+        '--negative_ratio',
+        type=int,
+        default=4,
+        help='Number of negative labels to sample for each positive label.'
     )
     parser.add_argument(
         '--margin',
