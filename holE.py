@@ -191,7 +191,7 @@ def evaluate_triples(triple_batch, embeddings, embedding_dim, label=None):
             loss = complex_tanh(score)
 
         variable_summaries(loss)
-        
+
     return loss
 
 
@@ -277,18 +277,11 @@ def run_training(data):
             # Score and minimize hinge-loss
             loss = tf.maximum(train_loss - corrupt_loss + margin, 0)
 
+        optimizer = tf.train.AdagradOptimizer(learning_rate).minimize(loss)
+
         # Log the total batch loss
         variable_summaries(loss)
         average_loss = tf.reduce_mean(loss)
-
-        global_step = tf.Variable(0, trainable=False)
-        lr_decay = tf.train.inverse_time_decay(learning_rate, global_step,
-                                               decay_steps=FLAGS.learning_decay_steps*batch_count,
-                                               decay_rate=FLAGS.learning_decay_rate)
-        tf.summary.scalar('learning_rate', lr_decay)
-
-        # TODO: experiment with other optimizers (Adam, Adagrad)
-        optimizer = tf.train.GradientDescentOptimizer(lr_decay).minimize(loss, global_step=global_step)
 
     summaries = tf.summary.merge_all()
 
@@ -469,18 +462,6 @@ if __name__ == '__main__':
         type=float,
         default=0.01,
         help='Initial learning rate.'
-    )
-    parser.add_argument(
-        '--learning_decay_steps',
-        type=float,
-        default=8,
-        help='Learning rate decay steps (in epochs).'
-    )
-    parser.add_argument(
-        '--learning_decay_rate',
-        type=float,
-        default=0.5,
-        help='Learning decay rate.'
     )
     parser.add_argument(
         '--batch_size',
