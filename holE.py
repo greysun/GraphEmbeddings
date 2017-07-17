@@ -185,7 +185,9 @@ def evaluate_triples(triple_batch, embeddings, embedding_dim, label=None):
             score = tf.multiply(relation_embeddings, circular_correlation(head_embeddings, tail_embeddings))
 
         if FLAGS.log_loss and label:
-            loss = tf.log(1. + tf.exp(tf.scalar_mul(label, score)))
+            complex_score = tf.scalar_mul(label, score)
+            real_score = tf.real(complex_score) + tf.imag(complex_score)
+            loss = tf.log(1. + tf.exp(real_score))
             # TODO: regularization
         else:
             loss = complex_tanh(score)
