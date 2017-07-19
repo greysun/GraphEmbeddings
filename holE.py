@@ -440,6 +440,9 @@ def infer_triples():
             try:
                 raw_reciprocal_rank = []
                 filtered_reciprocal_rank = []
+                h1 = []
+                h3 = []
+                h10 = []
 
                 for head in infer_heads:
                     candidate_triples = np.array(list(itertools.product([head], infer_tails, infer_relations)))
@@ -456,16 +459,24 @@ def infer_triples():
 
                     raw_rank = 0
                     filtered_rank = 0
+                    hits_at_one = 0
+                    hits_at_three = 0
+                    hits_at_ten = 0
 
                     while heap:
-                        # TODO: score hits at 1,3,10
-                        # TODO: score raw/filtered MRR
                         pair = heappop(heap)
                         loss = pair[0]
                         head_id = pair[1][0]
                         skill_id = pair[1][1]
 
                         raw_rank += 1
+                        if raw_rank <= 10 and (skill_id in train_skills[head_id] or skill_id in test_skills[head_id]):
+                            hits_at_ten += 1
+                            if raw_rank <= 3:
+                                hits_at_three += 1
+                            if raw_rank == 1:
+                                hits_at_one += 1
+
                         if skill_id in train_skills[head_id]:
                             rrr = 1. / raw_rank
                             print '\tTRAIN {}: {}\thttps://diffbot.com/entity/{}' \
@@ -485,8 +496,14 @@ def infer_triples():
                             print '\tGUESS {}: {}\thttps://diffbot.com/entity/{}'\
                                 .format(frr, loss, id_to_metadata[skill_id])
 
+                    h1.append(hits_at_one)
+                    h3.append(hits_at_three)
+                    h10.append(hits_at_ten)
+
                 print '\n\n\nRaw MRR: ', np.mean(raw_reciprocal_rank)
                 print 'Filtered MRR: ', np.mean(filtered_reciprocal_rank)
+                # TODO: adjust if test/train skills < 10 for each entity
+                print 'Hits at 1: {}, 3: {}, 10: {}'.format(np.mean(h1), np.mean(h3) / 3, np.mean(h10) / 10)
 
             except tf.errors.OutOfRangeError:
                 print('Done evaluation -- triple limit reached')
