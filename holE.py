@@ -10,6 +10,7 @@ import os
 import random
 import shutil
 import sys
+from heapq import heappush, heappop
 
 import numpy as np
 import tensorflow as tf
@@ -90,13 +91,14 @@ def corrupt_heads(type_to_ids, id_to_type, triples):
         relation_column = tf.slice(triples, [0, 2], [-1, 1])
 
         head_types = id_to_type.lookup(head_column)
-        type_ids = tf.reshape(type_to_ids.lookup(head_types), [FLAGS.batch_size, FLAGS.padded_size])
+        type_ids = tf.reshape(type_to_ids.lookup(head_types), [-1, FLAGS.padded_size])
 
-        random_indices = tf.random_uniform([FLAGS.batch_size],
+        size = tf.shape(head_column)[0]
+        random_indices = tf.random_uniform([size],
                                            maxval=FLAGS.padded_size,
                                            dtype=tf.int32)
-        flattened_indices = tf.range(0, FLAGS.batch_size) * FLAGS.padded_size + random_indices
-        corrupt_head_column = tf.reshape(tf.gather(tf.reshape(type_ids, [-1]), flattened_indices), [FLAGS.batch_size, 1])
+        flattened_indices = tf.range(0, size) * FLAGS.padded_size + random_indices
+        corrupt_head_column = tf.reshape(tf.gather(tf.reshape(type_ids, [-1]), flattened_indices), [size, 1])
         concat = tf.concat([tf.cast(corrupt_head_column, tf.int32), tail_column, relation_column], 1)
         return concat
 
@@ -108,19 +110,20 @@ def corrupt_tails(type_to_ids, id_to_type, triples):
         relation_column = tf.slice(triples, [0, 2], [-1, 1])
 
         tail_types = id_to_type.lookup(tail_column)
-        type_ids = tf.reshape(type_to_ids.lookup(tail_types), [FLAGS.batch_size, FLAGS.padded_size])
+        type_ids = tf.reshape(type_to_ids.lookup(tail_types), [-1, FLAGS.padded_size])
 
-        random_indices = tf.random_uniform([FLAGS.batch_size],
+        size = tf.shape(head_column)[0]
+        random_indices = tf.random_uniform([size],
                                            maxval=FLAGS.padded_size,
                                            dtype=tf.int32)
-        flattened_indices = tf.range(0, FLAGS.batch_size) * FLAGS.padded_size + random_indices
-        corrupt_tail_column = tf.reshape(tf.gather(tf.reshape(type_ids, [-1]), flattened_indices), [FLAGS.batch_size, 1])
+        flattened_indices = tf.range(0, size) * FLAGS.padded_size + random_indices
+        corrupt_tail_column = tf.reshape(tf.gather(tf.reshape(type_ids, [-1]), flattened_indices), [size, 1])
         concat = tf.concat([head_column, tf.cast(corrupt_tail_column, tf.int32), relation_column], 1)
         return concat
 
 
 def corrupt_entities(type_to_ids, id_to_type, triples):
-    should_corrupt_heads = tf.less(tf.random_uniform([], 0, 1.0), 0.5)
+    should_corrupt_heads = tf.less(tf.random_uniform([], 0, 1.0), 0.5, 'should_corrupt_heads')
     return tf.cond(should_corrupt_heads,
                    lambda: corrupt_heads(type_to_ids, id_to_type, triples),
                    lambda: corrupt_tails(type_to_ids, id_to_type, triples))
@@ -129,15 +132,15 @@ def corrupt_entities(type_to_ids, id_to_type, triples):
 def corrupt_relations(relation_count, triples):
     with tf.name_scope('relation'):
         entity_columns = tf.slice(triples, [0, 0], [-1, 2])
-        corrupt_relation_column = tf.random_uniform([FLAGS.batch_size, 1],
+        corrupt_relation_column = tf.random_uniform([tf.shape(entity_columns)[0], 1],
                                                     maxval=relation_count,
                                                     dtype=tf.int32)
         return tf.concat([entity_columns, corrupt_relation_column], 1)
 
 
 def corrupt_batch(type_to_ids, id_to_type, relation_count, triples):
-    should_corrupt_relation = tf.less(tf.random_uniform([], 0, 1.0), 0.3)
-    return tf.cond(should_corrupt_relation,
+    should_corrupt_relations = tf.less(tf.random_uniform([], 0, 1.0), 0.5, 'should_corrupt_relations')
+    return tf.cond(should_corrupt_relations,
                    lambda: corrupt_relations(relation_count, triples),
                    lambda: corrupt_entities(type_to_ids, id_to_type, triples))
 
@@ -150,10 +153,10 @@ def init_embedding(name, entity_count, embedding_dim):
 
 def get_embedding(layer_name, entity_ids, embeddings, embedding_dim):
     entity_embeddings = tf.reshape(tf.nn.embedding_lookup(embeddings, entity_ids, max_norm=1),
-                                   [FLAGS.batch_size, 2*embedding_dim])
+                                   [-1, 2*embedding_dim])
     real_embeddings = tf.slice(entity_embeddings, [0, 0], [-1, embedding_dim])
     imag_embeddings = tf.slice(entity_embeddings, [0, embedding_dim], [-1, embedding_dim]),
-    return tf.complex(real_embeddings, imag_embeddings, name=layer_name)
+    return tf.reshape(tf.complex(real_embeddings, imag_embeddings), [-1, embedding_dim], name=layer_name)
 
 
 def complex_tanh(complex_tensor):
@@ -185,7 +188,7 @@ def evaluate_triples(triple_batch, embeddings, embedding_dim, label=None):
             score = tf.multiply(relation_embeddings, circular_correlation(head_embeddings, tail_embeddings))
 
         if FLAGS.log_loss and label:
-            complex_score = tf.scalar_mul(label, score)
+            complex_score = tf.scalar_mul(-label, score)
             real_score = tf.real(complex_score) + tf.imag(complex_score)
             loss = tf.log(1. + tf.exp(real_score))
             # TODO: regularization
@@ -263,10 +266,11 @@ def run_training(data):
                 losses.append(train_loss)
             with (tf.name_scope('corrupt')):
                 for i in range(FLAGS.negative_ratio):
-                    corrupt_triples = corrupt_batch(type_to_ids_table, id_to_type_table,
-                                                    data.relation_count, triple_batch)
-                    corrupt_loss = evaluate_triples(corrupt_triples, embeddings, embedding_dim, -1)
-                    losses.append(corrupt_loss)
+                    with tf.name_scope('c' + str(i)):
+                        corrupt_triples = corrupt_batch(type_to_ids_table, id_to_type_table,
+                                                        data.relation_count, triple_batch)
+                        corrupt_loss = evaluate_triples(corrupt_triples, embeddings, embedding_dim, -1)
+                        losses.append(corrupt_loss)
 
             loss = tf.concat(losses, 0)
         else:
@@ -278,12 +282,9 @@ def run_training(data):
 
             # Score and minimize hinge-loss
             loss = tf.maximum(train_loss - corrupt_loss + margin, 0)
+            average_loss = tf.reduce_mean(loss)
 
         optimizer = tf.train.AdagradOptimizer(learning_rate).minimize(loss)
-
-        # Log the total batch loss
-        variable_summaries(loss)
-        average_loss = tf.reduce_mean(loss)
 
     summaries = tf.summary.merge_all()
 
@@ -334,14 +335,13 @@ def run_training(data):
                              type_to_ids_values: np.array(padded_values)}
                 sess.run([type_to_ids_insert], feed_dict)
 
-                batch_losses = []
                 for batch in range(1, batch_count):
                     # Train and log batch to summary_writer
                     if batch % (batch_count / 16) == 0:
                         run_options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
                         run_metadata = tf.RunMetadata()
-                        model, batch_loss, summary = sess.run(
-                            [optimizer, average_loss, summaries],
+                        model, summary = sess.run(
+                            [optimizer, summaries],
                             options=run_options,
                             run_metadata=run_metadata)
                         step = '{}-{}'.format(epoch, batch)
@@ -350,12 +350,11 @@ def run_training(data):
                         print '\tSaved summary for step {}...'.format(step)
 
                     else:
-                        model, batch_loss = sess.run([optimizer, average_loss])
-                    batch_losses.append(batch_loss)
+                        sess.run([optimizer])
 
                 # Checkpoint
                 save_path = saver.save(sess, FLAGS.output_dir + '/model.ckpt', epoch)
-                print('Epoch {} Loss: {}, (Model saved as {})'.format(epoch, np.mean(batch_losses), save_path))
+                print('Epoch {}, (Model saved as {})'.format(epoch, save_path))
 
         except tf.errors.OutOfRangeError:
             print('Done training -- epoch limit reached')
@@ -369,7 +368,6 @@ def run_training(data):
 def infer_triples():
     # TODO: this should be loaded from the saved model
     embedding_dim = FLAGS.embedding_dim
-    batch_size = FLAGS.batch_size
     entity_file = os.path.join(FLAGS.data_dir, 'entity_metadata.tsv')
 
     type_to_ids = defaultdict(list)
@@ -389,7 +387,7 @@ def infer_triples():
 
     # Infer persons
     # TODO: feed the entire stream in batches
-    infer_heads = np.random.choice(type_to_ids['P'], 100)
+    infer_heads = type_to_ids['P']
 
     # Infer skills
     infer_relations = [6]
@@ -397,15 +395,10 @@ def infer_triples():
     # Candidate targets
     infer_tails = type_to_ids['S']
 
-    triples = tf.constant(list(itertools.product(infer_heads, infer_relations, infer_tails)))
-
     with tf.name_scope('inference'):
         embeddings = init_embedding('embeddings', entity_count, embedding_dim)
 
-        triple_batch = tf.train.batch([triples], batch_size,
-                                      capacity=4*batch_size,
-                                      enqueue_many=True,
-                                      allow_smaller_final_batch=False)
+        triple_batch = tf.placeholder(tf.int64, [len(infer_tails), 3], 'triples')
 
         eval_loss = evaluate_triples(triple_batch, embeddings, embedding_dim)
 
@@ -426,15 +419,23 @@ def infer_triples():
             threads = tf.train.start_queue_runners(sess=sess, coord=coord)
 
             try:
-                while True:
-                    triples, batch_loss = sess.run([triple_batch, eval_loss])
+                for head in infer_heads:
+                    candidate_triples = np.array(list(itertools.product([head], infer_relations, infer_tails)))
+                    feed_dict = {triple_batch: candidate_triples}
+                    triples, batch_loss = sess.run([triple_batch, eval_loss], feed_dict)
+
+                    heap = []
                     for pair in zip(batch_loss, triples):
+                        print pair
                         loss = pair[0]
-                        confidence = -loss
-                        if confidence > FLAGS.inference_threshold:
-                            print 'Confidence {} that http://localhost:9200/diffbot_entity/Person/{} has skill\n\t' \
-                                  'http://localhost:9200/diffbot_entity/Skill/{}'.\
-                                  format(confidence, id_to_metadata[pair[1][0]], id_to_metadata[pair[1][2]])
+                        heappush(heap, (loss, pair[1]))
+                        person_id = id_to_metadata[pair[1][0]]
+
+                    print 'https://diffbot.com/entity/' + person_id + ' skills:'
+                    for i in range(10):
+                        # TODO: score hits at k
+                        pair = heappop(heap)
+                        print '\t{}\thttps://diffbot.com/entity/'.format(pair[0], id_to_metadata[pair[1][2]])
             except tf.errors.OutOfRangeError:
                 print('Done evaluation -- triple limit reached')
             finally:
@@ -491,7 +492,7 @@ if __name__ == '__main__':
     parser.add_argument(
         '--negative_ratio',
         type=int,
-        default=4,
+        default=8,
         help='Number of negative labels to sample for each positive label.'
     )
     parser.add_argument(
