@@ -396,12 +396,16 @@ def infer_triples():
     with open(skill_test, 'r') as f:
         for line in f:
             head_id, skill_id, _ = line.strip().split('\t')
+            head_id = int(head_id)
+            skill_id = int(skill_id)
             infer_heads.add(head_id)
             test_skills[head_id].append(skill_id)
 
     with open(skill_train, 'r') as f:
         for line in f:
             head_id, skill_id, _ = line.strip().split('\t')
+            head_id = int(head_id)
+            skill_id = int(skill_id)
             if head_id in test_skills:
                 train_skills[head_id].append(skill_id)
 
@@ -434,6 +438,9 @@ def infer_triples():
             threads = tf.train.start_queue_runners(sess=sess, coord=coord)
 
             try:
+                raw_reciprocal_rank = []
+                filtered_reciprocal_rank = []
+
                 for head in infer_heads:
                     candidate_triples = np.array(list(itertools.product([head], infer_tails, infer_relations)))
                     feed_dict = {triple_batch: candidate_triples}
@@ -446,7 +453,11 @@ def infer_triples():
                         person_id = id_to_metadata[pair[1][0]]
 
                     print 'https://diffbot.com/entity/' + person_id + ' skills:'
-                    for i in range(10):
+
+                    raw_rank = 0
+                    filtered_rank = 0
+
+                    while heap:
                         # TODO: score hits at 1,3,10
                         # TODO: score raw/filtered MRR
                         pair = heappop(heap)
@@ -454,13 +465,28 @@ def infer_triples():
                         head_id = pair[1][0]
                         skill_id = pair[1][1]
 
-                        match = ""
-                        if skill_id in test_skills[head_id]:
-                            match = "MATCH"
-                        elif skill_id in train_skills[head_id]:
-                            match = "TRAIN"
+                        raw_rank += 1
+                        if skill_id in train_skills[head_id]:
+                            rrr = 1. / raw_rank
+                            print '\tTRAIN {}: {}\thttps://diffbot.com/entity/{}' \
+                                .format(rrr, loss, id_to_metadata[skill_id])
+                            continue
+                        filtered_rank += 1
+                        frr = 1. / filtered_rank
 
-                        print '\t{}\thttps://diffbot.com/entity/{} {}'.format(loss, id_to_metadata[skill_id], match)
+                        if skill_id in test_skills[head_id]:
+                            raw_reciprocal_rank.append(1. / raw_rank)
+                            filtered_reciprocal_rank.append(frr)
+                            print '\tMATCH {}: {}\thttps://diffbot.com/entity/{}'\
+                                .format(frr, loss, id_to_metadata[skill_id])
+                            continue
+
+                        if filtered_rank < 10:
+                            print '\tGUESS {}: {}\thttps://diffbot.com/entity/{}'\
+                                .format(frr, loss, id_to_metadata[skill_id])
+
+                print '\n\n\nRaw MRR: ', np.mean(raw_reciprocal_rank)
+                print 'Filtered MRR: ', np.mean(filtered_reciprocal_rank)
 
             except tf.errors.OutOfRangeError:
                 print('Done evaluation -- triple limit reached')
