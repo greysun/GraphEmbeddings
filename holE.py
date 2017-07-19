@@ -171,7 +171,7 @@ def circular_correlation(h, t):
 
 def evaluate_triples(triple_batch, embeddings, embedding_dim, label=None):
     # Load embeddings
-    with tf.device('/cpu'):
+    with tf.device('/cpu:0'):
         head_column = tf.slice(triple_batch, [0, 0], [-1, 1], name='h_id')
         head_embeddings = get_embedding('h', head_column, embeddings, embedding_dim)
         tail_column = tf.slice(triple_batch, [0, 1], [-1, 1], name='t_id')
@@ -263,7 +263,9 @@ def run_training(data):
             losses = []
             with tf.name_scope('train'):
                 train_loss = evaluate_triples(triple_batch, embeddings, embedding_dim, 1)
-                losses.append(train_loss)
+                # Increase the weight of the positive case
+                # TODO: decrease this weight over time
+                losses.append(tf.scalar_mul(FLAGS.negative_ratio, train_loss))
             with (tf.name_scope('corrupt')):
                 for i in range(FLAGS.negative_ratio):
                     with tf.name_scope('c' + str(i)):
@@ -272,6 +274,7 @@ def run_training(data):
                         corrupt_loss = evaluate_triples(corrupt_triples, embeddings, embedding_dim, -1)
                         losses.append(corrupt_loss)
 
+            # Minimize log-loss
             loss = tf.concat(losses, 0)
         else:
             with tf.name_scope('train'):
@@ -282,7 +285,6 @@ def run_training(data):
 
             # Score and minimize hinge-loss
             loss = tf.maximum(train_loss - corrupt_loss + margin, 0)
-            average_loss = tf.reduce_mean(loss)
 
         optimizer = tf.train.AdagradOptimizer(learning_rate).minimize(loss)
 
@@ -386,7 +388,6 @@ def infer_triples():
     print 'Types: ', {k: len(v) for k, v in type_to_ids.iteritems()}
 
     # Infer persons
-    # TODO: feed the entire stream in batches
     infer_heads = type_to_ids['P']
 
     # Infer skills
@@ -399,10 +400,9 @@ def infer_triples():
         embeddings = init_embedding('embeddings', entity_count, embedding_dim)
 
         triple_batch = tf.placeholder(tf.int64, [len(infer_tails), 3], 'triples')
-
         eval_loss = evaluate_triples(triple_batch, embeddings, embedding_dim)
 
-        # Save embeddings
+        # Load embeddings
         saver = tf.train.Saver({'embeddings': embeddings})
 
         with tf.Session() as sess:
@@ -426,16 +426,15 @@ def infer_triples():
 
                     heap = []
                     for pair in zip(batch_loss, triples):
-                        print pair
-                        loss = pair[0]
-                        heappush(heap, (loss, pair[1]))
+                        loss = pair[0][0]
+                        heappush(heap, (loss, tuple(pair[1])))
                         person_id = id_to_metadata[pair[1][0]]
 
                     print 'https://diffbot.com/entity/' + person_id + ' skills:'
                     for i in range(10):
-                        # TODO: score hits at k
+                        # TODO: score hits at 1,3,10
                         pair = heappop(heap)
-                        print '\t{}\thttps://diffbot.com/entity/'.format(pair[0], id_to_metadata[pair[1][2]])
+                        print '\t{}\thttps://diffbot.com/entity/{}'.format(pair[0], id_to_metadata[pair[1][2]])
             except tf.errors.OutOfRangeError:
                 print('Done evaluation -- triple limit reached')
             finally:
@@ -492,7 +491,7 @@ if __name__ == '__main__':
     parser.add_argument(
         '--negative_ratio',
         type=int,
-        default=8,
+        default=4,
         help='Number of negative labels to sample for each positive label.'
     )
     parser.add_argument(
