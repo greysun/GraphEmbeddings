@@ -371,6 +371,8 @@ def infer_triples():
     # TODO: this should be loaded from the saved model
     embedding_dim = FLAGS.embedding_dim
     entity_file = os.path.join(FLAGS.data_dir, 'entity_metadata.tsv')
+    skill_train = os.path.join(FLAGS.data_dir, 'train_skills.txt')
+    skill_test = os.path.join(FLAGS.data_dir, 'test_skills.txt')
 
     type_to_ids = defaultdict(list)
     id_to_metadata = dict()
@@ -387,8 +389,21 @@ def infer_triples():
 
     print 'Types: ', {k: len(v) for k, v in type_to_ids.iteritems()}
 
-    # Infer persons
-    infer_heads = type_to_ids['P']
+    infer_heads = set()
+    train_skills = defaultdict(list)
+    test_skills = defaultdict(list)
+
+    with open(skill_test, 'r') as f:
+        for line in f:
+            head_id, skill_id, _ = line.strip().split('\t')
+            infer_heads.add(head_id)
+            test_skills[head_id].append(skill_id)
+
+    with open(skill_train, 'r') as f:
+        for line in f:
+            head_id, skill_id, _ = line.strip().split('\t')
+            if head_id in test_skills:
+                train_skills[head_id].append(skill_id)
 
     # Infer skills
     infer_relations = [6]
@@ -420,7 +435,7 @@ def infer_triples():
 
             try:
                 for head in infer_heads:
-                    candidate_triples = np.array(list(itertools.product([head], infer_relations, infer_tails)))
+                    candidate_triples = np.array(list(itertools.product([head], infer_tails, infer_relations)))
                     feed_dict = {triple_batch: candidate_triples}
                     triples, batch_loss = sess.run([triple_batch, eval_loss], feed_dict)
 
@@ -433,8 +448,20 @@ def infer_triples():
                     print 'https://diffbot.com/entity/' + person_id + ' skills:'
                     for i in range(10):
                         # TODO: score hits at 1,3,10
+                        # TODO: score raw/filtered MRR
                         pair = heappop(heap)
-                        print '\t{}\thttps://diffbot.com/entity/{}'.format(pair[0], id_to_metadata[pair[1][2]])
+                        loss = pair[0]
+                        head_id = pair[1][0]
+                        skill_id = pair[1][1]
+
+                        match = ""
+                        if skill_id in test_skills[head_id]:
+                            match = "MATCH"
+                        elif skill_id in train_skills[head_id]:
+                            match = "TRAIN"
+
+                        print '\t{}\thttps://diffbot.com/entity/{} {}'.format(loss, id_to_metadata[skill_id], match)
+
             except tf.errors.OutOfRangeError:
                 print('Done evaluation -- triple limit reached')
             finally:
