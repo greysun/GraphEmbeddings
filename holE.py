@@ -463,12 +463,14 @@ def infer_triples():
                     hits_at_one = 0
                     hits_at_three = 0
                     hits_at_ten = 0
+                    max_hits = 0
 
                     while heap:
                         pair = heappop(heap)
                         loss = pair[0]
                         head_id = pair[1][0]
                         skill_id = pair[1][1]
+                        max_hits = len(set(test_skills[head_id]) | set(train_skills[head_id]))
 
                         raw_rank += 1
                         if raw_rank <= 10 and (skill_id in train_skills[head_id] or skill_id in test_skills[head_id]):
@@ -498,13 +500,12 @@ def infer_triples():
                                 .format(frr, loss, id_to_metadata[skill_id])
 
                     h1.append(hits_at_one)
-                    h3.append(hits_at_three)
-                    h10.append(hits_at_ten)
+                    h3.append(hits_at_three / min(3., max_hits))
+                    h10.append(hits_at_ten / min(10., max_hits))
 
                 print '\n\n\nRaw MRR: ', np.mean(raw_reciprocal_rank)
                 print 'Filtered MRR: ', np.mean(filtered_reciprocal_rank)
-                # TODO: adjust if test/train skills < 10 for each entity
-                print 'Hits at 1: {}, 3: {}, 10: {}'.format(np.mean(h1), np.mean(h3) / 3, np.mean(h10) / 10)
+                print 'Hits at 1: {}, 3: {}, 10: {}'.format(np.mean(h1), np.mean(h3), np.mean(h10))
 
             except tf.errors.OutOfRangeError:
                 print('Done evaluation -- triple limit reached')
