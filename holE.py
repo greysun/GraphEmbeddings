@@ -289,7 +289,7 @@ def run_training(data):
             loss = tf.maximum(train_loss - corrupt_loss + margin, 0)
 
         global_step = tf.Variable(0, trainable=False)
-        lr = tf.train.inverse_time_decay(learning_rate, global_step, 4, 0.5)
+        lr = tf.train.inverse_time_decay(learning_rate, global_step, 4 * batch_size, 0.5)
         tf.summary.scalar('learning_rate', lr)
         optimizer = tf.train.GradientDescentOptimizer(lr).minimize(loss)
 
