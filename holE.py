@@ -288,14 +288,17 @@ def run_training(data):
             # Score and minimize hinge-loss
             loss = tf.maximum(train_loss - corrupt_loss + margin, 0)
 
-        optimizer = tf.train.AdagradOptimizer(learning_rate).minimize(loss)
+        global_step = tf.Variable(0, trainable=False)
+        lr = tf.train.inverse_time_decay(learning_rate, global_step, 4, 0.5)
+        tf.summary.scalar('learning_rate', lr)
+        optimizer = tf.train.GradientDescentOptimizer(lr).minimize(loss)
 
     summaries = tf.summary.merge_all()
 
     init_op = tf.global_variables_initializer()
 
     # Save embeddings
-    saver = tf.train.Saver({'embeddings': embeddings})
+    saver = tf.train.Saver()
 
     supervisor = tf.train.Supervisor(logdir=FLAGS.output_dir)
     with supervisor.managed_session() as sess:
