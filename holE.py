@@ -181,6 +181,7 @@ def evaluate_triples(triple_batch, embeddings, embedding_dim, label=None):
 
     # Compute loss
     with tf.name_scope('eval'):
+        # TODO: add learnable bias for all tail entities
         if FLAGS.cpu:
             # TransE
             score = head_embeddings + relation_embeddings - tail_embeddings
