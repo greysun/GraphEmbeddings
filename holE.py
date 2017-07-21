@@ -154,6 +154,7 @@ def init_embedding(name, entity_count, embedding_dim):
 def get_embedding(layer_name, entity_ids, embeddings, embedding_dim):
     entity_embeddings = tf.reshape(tf.nn.embedding_lookup(embeddings, entity_ids, max_norm=1),
                                    [-1, 2*embedding_dim])
+    # TODO: subtract the mean for entities of a given type
     real_embeddings = tf.slice(entity_embeddings, [0, 0], [-1, embedding_dim])
     imag_embeddings = tf.slice(entity_embeddings, [0, embedding_dim], [-1, embedding_dim]),
     return tf.reshape(tf.complex(real_embeddings, imag_embeddings), [-1, embedding_dim], name=layer_name)
