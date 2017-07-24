@@ -168,7 +168,7 @@ def complex_tanh(complex_tensor):
 
 def circular_correlation(h, t):
     # these ops are GPU only!
-    return tf.spectral.irfft(tf.multiply(tf.conj(tf.fft(h)), tf.fft(t)))
+    return tf.cast(tf.spectral.irfft(tf.multiply(tf.conj(tf.fft(h)), tf.fft(t))), tf.float64)
 
 
 def evaluate_triples(triple_batch, embeddings, embedding_dim, label=None):
