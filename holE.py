@@ -166,7 +166,7 @@ def reduce_tanh(batch_tensor):
 
 def circular_correlation(h, t):
     # these ops are GPU only!
-    return tf.cast(tf.spectral.irfft(tf.multiply(tf.conj(tf.spectral.rfft(h)), tf.spectral.rfft(t))), tf.float64)
+    return tf.spectral.irfft(tf.multiply(tf.conj(tf.spectral.rfft(h)), tf.spectral.rfft(t)))
 
 
 def evaluate_triples(triple_batch, embeddings, embedding_dim, label=None):
