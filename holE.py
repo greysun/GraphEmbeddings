@@ -146,18 +146,20 @@ def corrupt_batch(type_to_ids, id_to_type, relation_count, triples):
 
 
 def init_embedding(name, entity_count, embedding_dim):
-    embedding = tf.get_variable(name, [entity_count, 2*embedding_dim],
+    # 2x embedding dim (real part, imaginary part) + 1 for bias
+    embedding = tf.get_variable(name, [entity_count, 2*embedding_dim + 1],
                                 initializer=tf.contrib.layers.xavier_initializer(uniform=False))
     return embedding
 
 
 def get_embedding(layer_name, entity_ids, embeddings, embedding_dim):
     entity_embeddings = tf.reshape(tf.nn.embedding_lookup(embeddings, entity_ids, max_norm=1),
-                                   [-1, 2*embedding_dim])
+                                   [-1, 2*embedding_dim + 1])
     # TODO: subtract the mean for entities of a given type
     real_embeddings = tf.slice(entity_embeddings, [0, 0], [-1, embedding_dim])
     imag_embeddings = tf.slice(entity_embeddings, [0, embedding_dim], [-1, embedding_dim]),
-    return tf.reshape(tf.complex(real_embeddings, imag_embeddings), [-1, embedding_dim], name=layer_name)
+    bias = tf.slice(entity_embeddings, [0, embedding_dim + 1], [-1, 1])
+    return tf.reshape(tf.complex(real_embeddings, imag_embeddings), [-1, embedding_dim], name=layer_name), bias
 
 
 def complex_tanh(complex_tensor):
@@ -174,11 +176,11 @@ def evaluate_triples(triple_batch, embeddings, embedding_dim, label=None):
     # Load embeddings
     with tf.device('/cpu:0'):
         head_column = tf.slice(triple_batch, [0, 0], [-1, 1], name='h_id')
-        head_embeddings = get_embedding('h', head_column, embeddings, embedding_dim)
+        head_embeddings, head_bias = get_embedding('h', head_column, embeddings, embedding_dim)
         tail_column = tf.slice(triple_batch, [0, 1], [-1, 1], name='t_id')
-        tail_embeddings = get_embedding('t', tail_column, embeddings, embedding_dim)
+        tail_embeddings, tail_bias = get_embedding('t', tail_column, embeddings, embedding_dim)
         relation_column = tf.slice(triple_batch, [0, 2], [-1, 1], name='r_id')
-        relation_embeddings = get_embedding('r', relation_column, embeddings, embedding_dim)
+        relation_embeddings, relation_bias = get_embedding('r', relation_column, embeddings, embedding_dim)
 
     # Compute loss
     with tf.name_scope('eval'):
@@ -191,7 +193,7 @@ def evaluate_triples(triple_batch, embeddings, embedding_dim, label=None):
 
         if FLAGS.log_loss and label:
             complex_score = tf.scalar_mul(-label, score)
-            real_score = tf.real(complex_score) + tf.imag(complex_score)
+            real_score = tf.real(complex_score) + tf.imag(complex_score) + head_bias + tail_bias + relation_bias
             loss = tf.log(1. + tf.exp(real_score))
             # TODO: regularization
         else:
@@ -288,10 +290,12 @@ def run_training(data):
             # Score and minimize hinge-loss
             loss = tf.maximum(train_loss - corrupt_loss + margin, 0)
 
-        global_step = tf.Variable(0, trainable=False)
-        lr = tf.train.inverse_time_decay(learning_rate, global_step, 4 * batch_size, 0.5)
-        tf.summary.scalar('learning_rate', lr)
-        optimizer = tf.train.GradientDescentOptimizer(lr).minimize(loss)
+        global_step = tf.Variable(0, name='global_step', trainable=False)
+        lr_decay = tf.train.inverse_time_decay(learning_rate, global_step,
+                                               decay_steps=FLAGS.learning_decay_steps * batch_count,
+                                               decay_rate=FLAGS.learning_decay_rate)
+        tf.summary.scalar('learning_rate', lr_decay)
+        optimizer = tf.train.GradientDescentOptimizer(lr_decay).minimize(loss, global_step)
 
     summaries = tf.summary.merge_all()
 
@@ -542,6 +546,18 @@ if __name__ == '__main__':
         help='Initial learning rate.'
     )
     parser.add_argument(
+        '--learning_decay_steps',
+        type=float,
+        default=4,
+        help='Learning rate decay steps (in epochs).'
+    )
+    parser.add_argument(
+        '--learning_decay_rate',
+        type=float,
+        default=0.5,
+        help='Learning decay rate.'
+    )
+    parser.add_argument(
         '--batch_size',
         type=int,
         default=512,
@@ -568,7 +584,7 @@ if __name__ == '__main__':
         '--negative_ratio',
         type=int,
         default=4,
-        help='Number of negative labels to sample for each positive label.'
+        help='Number of negative labels to sample for each positive label (log_loss only).'
     )
     parser.add_argument(
         '--margin',
