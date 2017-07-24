@@ -155,20 +155,18 @@ def get_embedding(layer_name, entity_ids, embeddings, embedding_dim):
     entity_embeddings = tf.reshape(tf.nn.embedding_lookup(embeddings, entity_ids, max_norm=1),
                                    [-1, embedding_dim + 1])
     # TODO: subtract the mean for entities of a given type
-    real_embeddings = tf.slice(entity_embeddings, [0, 0], [-1, embedding_dim])
+    embeddings = tf.slice(entity_embeddings, [0, 0], [-1, embedding_dim])
     bias = tf.slice(entity_embeddings, [0, embedding_dim + 1], [-1, 1])
-    return tf.reshape(tf.complex(real_embeddings, tf.zeros_like(real_embeddings)),
-                      [-1, embedding_dim], name=layer_name), bias
+    return tf.reshape(embeddings, [-1, embedding_dim], name=layer_name), bias
 
 
-def complex_tanh(complex_tensor):
-    summed = tf.reduce_sum(tf.real(complex_tensor) + tf.imag(complex_tensor), 1, keep_dims=True)
-    return tf.tanh(summed)
+def reduce_tanh(batch_tensor):
+    return tf.tanh(tf.reduce_sum(batch_tensor, 1, keep_dims=True))
 
 
 def circular_correlation(h, t):
     # these ops are GPU only!
-    return tf.cast(tf.spectral.irfft(tf.multiply(tf.conj(tf.fft(h)), tf.fft(t))), tf.float64)
+    return tf.cast(tf.spectral.irfft(tf.multiply(tf.conj(tf.spectral.rfft(h)), tf.spectral.rfft(t))), tf.float64)
 
 
 def evaluate_triples(triple_batch, embeddings, embedding_dim, label=None):
@@ -195,7 +193,7 @@ def evaluate_triples(triple_batch, embeddings, embedding_dim, label=None):
             loss = tf.log(1. + tf.exp(score))
             # TODO: regularization
         else:
-            loss = complex_tanh(score)
+            loss = reduce_tanh(score)
 
         variable_summaries(loss)
 
