@@ -63,7 +63,7 @@ def get_the_data():
         'Triples: ', data.triple_count
     print 'Types: ', {k: len(v) for k, v in data.type_to_ids.iteritems()}
     for k, v in data.type_to_ids.iteritems():
-        print "\t", k, np.random.choice(v, 10)
+        print '\t', k, np.random.choice(v, 10)
 
     with tf.name_scope('input'):
         # Load triples from triple_file TSV
@@ -146,20 +146,19 @@ def corrupt_batch(type_to_ids, id_to_type, relation_count, triples):
 
 
 def init_embedding(name, entity_count, embedding_dim):
-    # 2x embedding dim (real part, imaginary part) + 1 for bias
-    embedding = tf.get_variable(name, [entity_count, 2*embedding_dim + 1],
+    embedding = tf.get_variable(name, [entity_count, embedding_dim + 1],
                                 initializer=tf.contrib.layers.xavier_initializer(uniform=False))
     return embedding
 
 
 def get_embedding(layer_name, entity_ids, embeddings, embedding_dim):
     entity_embeddings = tf.reshape(tf.nn.embedding_lookup(embeddings, entity_ids, max_norm=1),
-                                   [-1, 2*embedding_dim + 1])
+                                   [-1, embedding_dim + 1])
     # TODO: subtract the mean for entities of a given type
     real_embeddings = tf.slice(entity_embeddings, [0, 0], [-1, embedding_dim])
-    imag_embeddings = tf.slice(entity_embeddings, [0, embedding_dim], [-1, embedding_dim]),
     bias = tf.slice(entity_embeddings, [0, embedding_dim + 1], [-1, 1])
-    return tf.reshape(tf.complex(real_embeddings, imag_embeddings), [-1, embedding_dim], name=layer_name), bias
+    return tf.reshape(tf.complex(real_embeddings, tf.zeros_like(real_embeddings)),
+                      [-1, embedding_dim], name=layer_name), bias
 
 
 def complex_tanh(complex_tensor):
@@ -169,7 +168,7 @@ def complex_tanh(complex_tensor):
 
 def circular_correlation(h, t):
     # these ops are GPU only!
-    return tf.ifft(tf.multiply(tf.conj(tf.fft(h)), tf.fft(t)))
+    return tf.spectral.irfft(tf.multiply(tf.conj(tf.fft(h)), tf.fft(t)))
 
 
 def evaluate_triples(triple_batch, embeddings, embedding_dim, label=None):
@@ -192,9 +191,8 @@ def evaluate_triples(triple_batch, embeddings, embedding_dim, label=None):
             score = tf.multiply(relation_embeddings, circular_correlation(head_embeddings, tail_embeddings))
 
         if FLAGS.log_loss and label:
-            complex_score = tf.scalar_mul(-label, score)
-            real_score = tf.real(complex_score) + tf.imag(complex_score) + head_bias + tail_bias + relation_bias
-            loss = tf.log(1. + tf.exp(real_score))
+            score = tf.scalar_mul(-label, score) + head_bias + tail_bias + relation_bias
+            loss = tf.log(1. + tf.exp(score))
             # TODO: regularization
         else:
             loss = complex_tanh(score)
@@ -238,7 +236,7 @@ def run_training(data):
         # Initialize embeddings (TF doesn't support complex embeddings, split real part and imaginary part)
         embeddings = init_embedding('embeddings', data.entity_count, embedding_dim)
 
-        # Initialize tables for type-safe corruption (to avoid junk triples like "Jeff", "Employer", "Java")
+        # Initialize tables for type-safe corruption (to avoid junk triples like 'Jeff', 'Employer', 'Java')
         with tf.name_scope('tables'):
             with tf.name_scope('type_to_ids'):
                 type_to_ids_keys = tf.placeholder(tf.string, [len(data.type_to_ids)], 'keys')
