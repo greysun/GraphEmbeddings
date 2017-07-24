@@ -156,7 +156,7 @@ def get_embedding(layer_name, entity_ids, embeddings, embedding_dim):
                                    [-1, embedding_dim + 1])
     # TODO: subtract the mean for entities of a given type
     embeddings = tf.slice(entity_embeddings, [0, 0], [-1, embedding_dim])
-    bias = tf.slice(entity_embeddings, [0, embedding_dim + 1], [-1, 1])
+    bias = tf.slice(entity_embeddings, [0, embedding_dim], [-1, 1])
     return tf.reshape(embeddings, [-1, embedding_dim], name=layer_name), bias
 
 
