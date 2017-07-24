@@ -181,7 +181,6 @@ def evaluate_triples(triple_batch, embeddings, embedding_dim, label=None):
 
     # Compute loss
     with tf.name_scope('eval'):
-        # TODO: add learnable bias for all tail entities
         if FLAGS.cpu:
             # TransE
             score = head_embeddings + relation_embeddings - tail_embeddings
@@ -413,6 +412,8 @@ def infer_triples():
             skill_id = int(skill_id)
             if head_id in test_skills:
                 train_skills[head_id].append(skill_id)
+
+    # TODO: evaluate (current) location inference
 
     # Infer skills
     infer_relations = [6]
