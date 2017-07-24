@@ -193,7 +193,7 @@ def evaluate_triples(triple_batch, embeddings, embedding_dim, label=None):
             loss = tf.log(1. + tf.exp(score))
             # TODO: regularization
         else:
-            loss = reduce_tanh(score)
+            loss = reduce_tanh(score + head_bias + tail_bias + relation_bias)
 
         variable_summaries(loss)
 
