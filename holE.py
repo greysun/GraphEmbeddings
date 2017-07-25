@@ -546,7 +546,7 @@ if __name__ == '__main__':
     parser.add_argument(
         '--learning_decay_steps',
         type=float,
-        default=4,
+        default=16,
         help='Learning rate decay steps (in epochs).'
     )
     parser.add_argument(
