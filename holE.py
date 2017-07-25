@@ -331,6 +331,7 @@ def run_training(data):
                 projector_config = projector.ProjectorConfig()
                 embeddings_config = projector_config.embeddings.add()
                 embeddings_config.tensor_name = embeddings.name
+                # TODO: adjust thumbnail size based on embedding bias
                 embeddings.metadata_path = os.path.join(FLAGS.data_dir, 'entity_metadata.tsv')
                 projector.visualize_embeddings(summary_writer, projector_config)
 
@@ -493,6 +494,7 @@ def infer_triples():
                         frr = 1. / filtered_rank
 
                         if skill_id in test_skills[head_id]:
+                            raw_reciprocal_rank.append(1. / raw_rank)
                             raw_reciprocal_rank.append(1. / raw_rank)
                             filtered_reciprocal_rank.append(frr)
                             print '\tMATCH {}: {}\thttps://diffbot.com/entity/{}'\
