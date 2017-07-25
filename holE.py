@@ -486,9 +486,8 @@ def infer_triples():
                                 hits_at_one += 1
 
                         if skill_id in train_skills[head_id]:
-                            rrr = 1. / raw_rank
                             print '\tTRAIN {}: {}\thttps://diffbot.com/entity/{}' \
-                                .format(rrr, loss, id_to_metadata[skill_id])
+                                .format(raw_rank, loss, id_to_metadata[skill_id])
                             continue
                         filtered_rank += 1
                         frr = 1. / filtered_rank
@@ -497,12 +496,12 @@ def infer_triples():
                             raw_reciprocal_rank.append(1. / raw_rank)
                             filtered_reciprocal_rank.append(frr)
                             print '\tMATCH {}: {}\thttps://diffbot.com/entity/{}'\
-                                .format(frr, loss, id_to_metadata[skill_id])
+                                .format(filtered_rank, loss, id_to_metadata[skill_id])
                             continue
 
                         if filtered_rank < 10:
                             print '\tGUESS {}: {}\thttps://diffbot.com/entity/{}'\
-                                .format(frr, loss, id_to_metadata[skill_id])
+                                .format(filtered_rank, loss, id_to_metadata[skill_id])
 
                     h1.append(hits_at_one)
                     h3.append(hits_at_three / min(3., max_hits))
