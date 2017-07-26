@@ -192,7 +192,7 @@ def evaluate_triples(triple_batch, embeddings, embedding_dim, label=None):
             loss = tf.log(1. + tf.exp(score))
             # TODO: regularization
         else:
-            loss = reduce_tanh(score + head_bias + tail_bias + relation_bias)
+            loss = reduce_tanh(score + tail_bias + relation_bias)
 
         variable_summaries(loss)
 
@@ -360,6 +360,7 @@ def run_training(data):
                         sess.run([optimizer])
 
                 # Checkpoint
+                # TODO: only checkpoint if validation MRR decreases
                 save_path = saver.save(sess, FLAGS.output_dir + '/model.ckpt', epoch)
                 print('Epoch {}, (Model saved as {})'.format(epoch, save_path))
 
