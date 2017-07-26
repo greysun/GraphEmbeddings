@@ -230,8 +230,9 @@ def run_training(data):
             raise
 
     with tf.device('/cpu'):
-        # Initialize embeddings (TF doesn't support complex embeddings, split real part and imaginary part)
+        # Initialize embeddings
         embeddings = init_embedding('embeddings', data.entity_count, embedding_dim)
+        tf.summary.histogram('embeddings', embeddings)
 
         # Initialize tables for type-safe corruption (to avoid junk triples like 'Jeff', 'Employer', 'Java')
         with tf.name_scope('tables'):
@@ -255,7 +256,8 @@ def run_training(data):
                                               capacity=2*data.triple_count,
                                               # TODO: this probably won't scale
                                               min_after_dequeue=data.triple_count,
-                                              allow_smaller_final_batch=False)
+                                              allow_smaller_final_batch=False,
+                                              name="shuffle_batch")
 
         # Evaluate triples
         if FLAGS.log_loss:
@@ -343,18 +345,18 @@ def run_training(data):
                 sess.run([type_to_ids_insert], feed_dict)
 
                 for batch in range(1, batch_count):
+                    # TODO: print eval scores from validation
                     # Train and log batch to summary_writer
                     if batch % (batch_count / 16) == 0:
-                        run_options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
-                        run_metadata = tf.RunMetadata()
-                        model, summary = sess.run(
-                            [optimizer, summaries],
-                            options=run_options,
-                            run_metadata=run_metadata)
-                        step = '{}-{}'.format(epoch, batch)
-                        summary_writer.add_run_metadata(run_metadata, step)
+                        #run_options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
+                        #run_metadata = tf.RunMetadata()
+                        model, summary = sess.run([optimizer, summaries])
+                        #    options=run_options,
+                        #    run_metadata=run_metadata)
+                        #step = '{}-{}'.format(epoch, batch)
+                        #summary_writer.add_run_metadata(run_metadata, step)
                         summary_writer.add_summary(summary, epoch * batch_count + batch)
-                        print '\tSaved summary for step {}...'.format(step)
+                        print '\tSaved summary for step {}...'.format(epoch * batch_count + batch)
 
                     else:
                         sess.run([optimizer])
@@ -528,6 +530,7 @@ def main(_):
         infer_triples()
     else:
         training_data = get_the_data()
+        # TODO: param search
         run_training(training_data)
 
 
