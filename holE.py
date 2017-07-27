@@ -45,7 +45,6 @@ def get_the_data():
     corrupt_triple_file = os.path.join(FLAGS.data_dir, 'triples.txt')
 
     data = HolEData()
-
     data.relation_count = sum(1 for line in open(relation_file))
     data.triple_count = sum(1 for line in open(corrupt_triple_file))
 
@@ -68,8 +67,7 @@ def get_the_data():
     with tf.name_scope('input'):
         # Load triples from triple_file TSV
         reader = tf.TextLineReader()
-        # TODO: shard files, TfrecordReader
-        # TODO: tf.records, move preprocessing to separate script
+        # TODO: shard files, use TfrecordReader
         filename_queue = tf.train.string_input_producer([corrupt_triple_file] * FLAGS.num_epochs)
         key, value = reader.read(filename_queue)
 
@@ -145,18 +143,18 @@ def corrupt_batch(type_to_ids, id_to_type, relation_count, triples):
                    lambda: corrupt_entities(type_to_ids, id_to_type, triples))
 
 
-def init_embedding(name, entity_count, embedding_dim):
-    embedding = tf.get_variable(name, [entity_count, embedding_dim],
+def init_embedding(name, entity_count):
+    embedding = tf.get_variable(name, [entity_count, FLAGS.embedding_dim],
                                 initializer=tf.contrib.layers.xavier_initializer(uniform=False))
     return embedding
 
 
-def get_embedding(layer_name, entity_ids, embeddings, embedding_dim):
+def get_embedding(layer_name, entity_ids, embeddings):
     entity_embeddings = tf.reshape(tf.nn.embedding_lookup(embeddings, entity_ids, max_norm=1),
-                                   [-1, embedding_dim ])
+                                   [-1, FLAGS.embedding_dim])
     # TODO: subtract the mean for entities of a given type
-    embeddings = tf.slice(entity_embeddings, [0, 0], [-1, embedding_dim])
-    return tf.reshape(embeddings, [-1, embedding_dim], name=layer_name)
+    embeddings = tf.slice(entity_embeddings, [0, 0], [-1, FLAGS.embedding_dim])
+    return tf.reshape(embeddings, [-1, FLAGS.embedding_dim], name=layer_name)
 
 
 def reduce_tanh(batch_tensor):
@@ -168,15 +166,15 @@ def circular_correlation(h, t):
     return tf.spectral.irfft(tf.multiply(tf.conj(tf.spectral.rfft(h)), tf.spectral.rfft(t)))
 
 
-def evaluate_triples(triple_batch, embeddings, embedding_dim, label=None):
+def evaluate_triples(triple_batch, embeddings, label=None):
     # Load embeddings
     with tf.device('/cpu:0'):
         head_column = tf.slice(triple_batch, [0, 0], [-1, 1], name='h_id')
-        head_embeddings = get_embedding('h', head_column, embeddings, embedding_dim)
+        head_embeddings = get_embedding('h', head_column, embeddings)
         tail_column = tf.slice(triple_batch, [0, 1], [-1, 1], name='t_id')
-        tail_embeddings = get_embedding('t', tail_column, embeddings, embedding_dim)
+        tail_embeddings = get_embedding('t', tail_column, embeddings)
         relation_column = tf.slice(triple_batch, [0, 2], [-1, 1], name='r_id')
-        relation_embeddings = get_embedding('r', relation_column, embeddings, embedding_dim)
+        relation_embeddings = get_embedding('r', relation_column, embeddings)
 
     # Compute loss
     with tf.name_scope('eval'):
@@ -193,12 +191,12 @@ def evaluate_triples(triple_batch, embeddings, embedding_dim, label=None):
         else:
             loss = reduce_tanh(score)
 
-        variable_summaries(loss)
+        summarize(loss)
 
     return loss
 
 
-def variable_summaries(var):
+def summarize(var):
     with tf.name_scope('summaries'):
         mean = tf.reduce_mean(var)
         tf.summary.scalar('mean', mean)
@@ -211,13 +209,8 @@ def variable_summaries(var):
 
 
 def run_training(data):
-    # Initialize parameters
-    margin = FLAGS.margin
-    embedding_dim = FLAGS.embedding_dim
-    learning_rate = FLAGS.learning_rate
-    batch_size = FLAGS.batch_size
-    batch_count = data.triple_count / batch_size
-    print 'Embedding dimension: ', embedding_dim, 'Batch size: ', batch_size, 'Batch count: ', batch_count
+    batch_count = data.triple_count / FLAGS.batch_size
+    print 'Embedding dimension: ', FLAGS.embedding_dim, 'Batch size: ', FLAGS.batch_size, 'Batch count: ', batch_count
 
     # Warning: this will clobber existing summaries
     if not FLAGS.resume_checkpoint and os.path.isdir(FLAGS.output_dir):
@@ -228,28 +221,25 @@ def run_training(data):
         if e.errno != errno.EEXIST:
             raise
 
-    with tf.device('/cpu'):
-        # Initialize embeddings
-        embeddings = init_embedding('embeddings', data.entity_count, embedding_dim)
+    # Initialize embeddings
+    embeddings = init_embedding('embeddings', data.entity_count)
 
-        # Initialize tables for type-safe corruption (to avoid junk triples like 'Jeff', 'Employer', 'Java')
-        with tf.name_scope('tables'):
-            with tf.name_scope('type_to_ids'):
-                type_to_ids_keys = tf.placeholder(tf.string, [len(data.type_to_ids)], 'keys')
-                type_to_ids_values = tf.placeholder(tf.int64, [len(data.type_to_ids), FLAGS.padded_size], 'values')
-
-                type_to_ids_table = init_table(tf.string, tf.int64, 'type_to_ids', type_to_ids=True)
-                type_to_ids_insert = type_to_ids_table.insert(type_to_ids_keys, type_to_ids_values)
-            with tf.name_scope('id_to_type'):
-                id_to_type_keys = tf.placeholder(tf.int64, [data.entity_count], 'keys')
-                id_to_type_values = tf.placeholder(tf.string, [data.entity_count], 'values')
-
-                id_to_type_table = init_table(tf.int64, tf.string, 'id_to_type')
-                id_to_type_insert = id_to_type_table.insert(id_to_type_keys, id_to_type_values)
+    # Initialize tables for type-safe corruption (to avoid junk triples like 'Jeff', 'Employer', 'Java')
+    with tf.name_scope('corruption_tables'):
+        with tf.name_scope('type_to_ids'):
+            type_to_ids_table = init_table(tf.string, tf.int64, 'type_to_ids', type_to_ids=True)
+            type_to_ids_keys = tf.placeholder(tf.string, [len(data.type_to_ids)], 'keys')
+            type_to_ids_values = tf.placeholder(tf.int64, [len(data.type_to_ids), FLAGS.padded_size], 'values')
+            type_to_ids_insert = type_to_ids_table.insert(type_to_ids_keys, type_to_ids_values)
+        with tf.name_scope('id_to_type'):
+            id_to_type_table = init_table(tf.int64, tf.string, 'id_to_type')
+            id_to_type_keys = tf.placeholder(tf.int64, [data.entity_count], 'keys')
+            id_to_type_values = tf.placeholder(tf.string, [data.entity_count], 'values')
+            id_to_type_insert = id_to_type_table.insert(id_to_type_keys, id_to_type_values)
 
     with tf.name_scope('batch'):
         # Sample triples
-        triple_batch = tf.train.shuffle_batch([data.triples], batch_size,
+        triple_batch = tf.train.shuffle_batch([data.triples], FLAGS.batch_size,
                                               num_threads=FLAGS.reader_threads,
                                               capacity=2*data.triple_count,
                                               # TODO: this probably won't scale
@@ -261,7 +251,7 @@ def run_training(data):
         if FLAGS.log_loss:
             losses = []
             with tf.name_scope('train'):
-                train_loss = evaluate_triples(triple_batch, embeddings, embedding_dim, 1)
+                train_loss = evaluate_triples(triple_batch, embeddings, 1)
                 # Increase the weight of the positive case
                 # TODO: decrease this weight over time
                 losses.append(tf.scalar_mul(FLAGS.negative_ratio, train_loss))
@@ -270,24 +260,24 @@ def run_training(data):
                     with tf.name_scope('c' + str(i)):
                         corrupt_triples = corrupt_batch(type_to_ids_table, id_to_type_table,
                                                         data.relation_count, triple_batch)
-                        corrupt_loss = evaluate_triples(corrupt_triples, embeddings, embedding_dim, -1)
+                        corrupt_loss = evaluate_triples(corrupt_triples, embeddings, -1)
                         losses.append(corrupt_loss)
 
             # Minimize log-loss
             loss = tf.concat(losses, 0)
         else:
             with tf.name_scope('train'):
-                train_loss = evaluate_triples(triple_batch, embeddings, embedding_dim)
+                train_loss = evaluate_triples(triple_batch, embeddings)
             with (tf.name_scope('corrupt')):
                 corrupt_triples = corrupt_batch(type_to_ids_table, id_to_type_table, data.relation_count, triple_batch)
-                corrupt_loss = evaluate_triples(corrupt_triples, embeddings, embedding_dim)
+                corrupt_loss = evaluate_triples(corrupt_triples, embeddings)
 
             # Score and minimize hinge-loss
-            loss = tf.maximum(train_loss - corrupt_loss + margin, 0)
+            loss = tf.maximum(train_loss - corrupt_loss + FLAGS.margin, 0)
 
         global_step = tf.Variable(0, name='global_step', trainable=False)
-        lr_decay = tf.train.inverse_time_decay(learning_rate, global_step,
-                                               decay_steps=FLAGS.learning_decay_steps * batch_count,
+        lr_decay = tf.train.inverse_time_decay(FLAGS.learning_rate, global_step,
+                                               decay_steps=FLAGS.learning_decay_steps*batch_count,
                                                decay_rate=FLAGS.learning_decay_rate)
         tf.summary.scalar('learning_rate', lr_decay)
         optimizer = tf.train.GradientDescentOptimizer(lr_decay).minimize(loss, global_step)
@@ -295,12 +285,8 @@ def run_training(data):
         tf.summary.histogram('embeddings', embeddings)
 
     summaries = tf.summary.merge_all()
-
     init_op = tf.global_variables_initializer()
-
-    # Save embeddings
     saver = tf.train.Saver()
-
     supervisor = tf.train.Supervisor(logdir=FLAGS.output_dir)
     with supervisor.managed_session() as sess:
         if FLAGS.debug:
@@ -315,8 +301,6 @@ def run_training(data):
             # TODO: continue counting from last epoch
 
         summary_writer = tf.summary.FileWriter(FLAGS.output_dir, sess.graph)
-
-        # TODO: separate thread for shuffling type_to_ids
         coord = tf.train.Coordinator()
         threads = tf.train.start_queue_runners(sess=sess, coord=coord)
 
@@ -333,8 +317,6 @@ def run_training(data):
                 projector_config = projector.ProjectorConfig()
                 embeddings_config = projector_config.embeddings.add()
                 embeddings_config.tensor_name = embeddings.name
-                # TODO: adjust thumbnail size based on embedding bias
-                embeddings.metadata_path = os.path.join(FLAGS.data_dir, 'entity_metadata.tsv')
                 projector.visualize_embeddings(summary_writer, projector_config)
 
                 # Shuffle the available corrupt entity ids and insert every epoch
@@ -348,13 +330,7 @@ def run_training(data):
                     # TODO: print eval scores from validation
                     # Train and log batch to summary_writer
                     if batch % (batch_count / 16) == 0:
-                        #run_options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
-                        #run_metadata = tf.RunMetadata()
                         model, summary = sess.run([optimizer, summaries])
-                        #    options=run_options,
-                        #    run_metadata=run_metadata)
-                        #step = '{}-{}'.format(epoch, batch)
-                        #summary_writer.add_run_metadata(run_metadata, step)
                         summary_writer.add_summary(summary, epoch * batch_count + batch)
                         print '\tSaved summary for step {}...'.format(epoch * batch_count + batch)
 
@@ -377,7 +353,6 @@ def run_training(data):
 
 def infer_triples():
     # TODO: this should be loaded from the saved model
-    embedding_dim = FLAGS.embedding_dim
     entity_file = os.path.join(FLAGS.data_dir, 'entity_metadata.tsv')
     skill_train = os.path.join(FLAGS.data_dir, 'train_skills.txt')
     skill_test = os.path.join(FLAGS.data_dir, 'test_skills.txt')
@@ -426,10 +401,10 @@ def infer_triples():
     infer_tails = type_to_ids['S']
 
     with tf.name_scope('inference'):
-        embeddings = init_embedding('embeddings', entity_count, embedding_dim)
+        embeddings = init_embedding('embeddings', entity_count)
 
         triple_batch = tf.placeholder(tf.int64, [len(infer_tails), 3], 'triples')
-        eval_loss = evaluate_triples(triple_batch, embeddings, embedding_dim)
+        eval_loss = evaluate_triples(triple_batch, embeddings)
 
         # Load embeddings
         saver = tf.train.Saver({'embeddings': embeddings})
@@ -544,7 +519,7 @@ if __name__ == '__main__':
     parser.add_argument(
         '--learning_rate',
         type=float,
-        default=0.01,
+        default=0.1,
         help='Initial learning rate.'
     )
     parser.add_argument(
