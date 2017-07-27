@@ -363,6 +363,7 @@ class HolEInferenceData(HolEData):
 
 def init_inference_data():
     entity_file = os.path.join(FLAGS.data_dir, 'entity_metadata.tsv')
+    relation_file = os.path.join(FLAGS.data_dir, 'relation_ids.txt')
     train_triples = os.path.join(FLAGS.data_dir, 'triples.txt')
     valid_triples = os.path.join(FLAGS.data_dir, 'triples-valid.txt')
     test_triples = os.path.join(FLAGS.data_dir, 'test_positive_triples.txt')
@@ -377,6 +378,8 @@ def init_inference_data():
             index = int(index)
             data.type_to_ids[entity_type].append(index)
             data.id_to_metadata[index] = entity_id + ' ' + name
+
+    data.relation_count = sum(1 for line in open(relation_file))
 
     print 'Types: ', {k: len(v) for k, v in data.type_to_ids.iteritems()}
 
@@ -440,13 +443,16 @@ def eval_link_prediction(scores, id_to_metadata, true_triples, test_triples, raw
 
 def infer_triples():
     data = init_inference_data()
-
-    # TODO: evaluate (current) location inference
+    # Consider locations current location, location (region, country)
+    #relation_ids = [10, 13, 14]
+    relation_ids = [9, 10]
+    tail_type = 'A'
 
     with tf.name_scope('inference'):
         embeddings = init_embedding('embeddings', data.entity_count)
 
-        triple_batch = tf.placeholder(tf.int64, [data.entity_count, 3], 'triples')
+        triple_batch = tf.placeholder(tf.int64, [len(data.type_to_ids[tail_type]), 3], 'triples') \
+            if FLAGS.infer_typesafe else tf.placeholder(tf.int64, [data.entity_count-data.relation_count, 3], 'triples')
         eval_loss = evaluate_triples(triple_batch, embeddings)
 
         # Load embeddings
@@ -471,9 +477,12 @@ def infer_triples():
 
                 for head in data.test_triples:
                     for relation in data.test_triples[head]:
+                        if FLAGS.infer_typesafe and relation not in relation_ids:
+                            continue
+
                         # TODO: only evaluate on appropriate type tails, when available
-                        candidate_triples = np.array(list(itertools.product([head], range(0, data.entity_count),
-                                                                            [relation])))
+                        candidate_triples = np.array(list(
+                            itertools.product([head], range(data.relation_count, data.entity_count), [relation])))
                         feed_dict = {triple_batch: candidate_triples}
                         triples, batch_loss = sess.run([triple_batch, eval_loss], feed_dict)
 
@@ -506,7 +515,7 @@ def infer_triples():
 
 def main(_):
     # TODO: refactor model in to object
-    if FLAGS.infer:
+    if FLAGS.infer or FLAGS.infer_typesafe:
         infer_triples()
     else:
         training_data = init_data()
@@ -612,6 +621,11 @@ if __name__ == '__main__':
         '--infer',
         action='store_true',
         help='Infer new triples from the latest checkpoint model.'
+    )
+    parser.add_argument(
+        '--infer_typesafe',
+        action='store_true',
+        help='Infer new triples using type-safe candidate entities only.'
     )
     parser.add_argument(
         '--inference-threshold',
