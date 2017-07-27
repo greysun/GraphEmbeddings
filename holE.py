@@ -146,18 +146,17 @@ def corrupt_batch(type_to_ids, id_to_type, relation_count, triples):
 
 
 def init_embedding(name, entity_count, embedding_dim):
-    embedding = tf.get_variable(name, [entity_count, embedding_dim + 1],
+    embedding = tf.get_variable(name, [entity_count, embedding_dim],
                                 initializer=tf.contrib.layers.xavier_initializer(uniform=False))
     return embedding
 
 
 def get_embedding(layer_name, entity_ids, embeddings, embedding_dim):
     entity_embeddings = tf.reshape(tf.nn.embedding_lookup(embeddings, entity_ids, max_norm=1),
-                                   [-1, embedding_dim + 1])
+                                   [-1, embedding_dim ])
     # TODO: subtract the mean for entities of a given type
     embeddings = tf.slice(entity_embeddings, [0, 0], [-1, embedding_dim])
-    bias = tf.slice(entity_embeddings, [0, embedding_dim], [-1, 1])
-    return tf.reshape(embeddings, [-1, embedding_dim], name=layer_name), bias
+    return tf.reshape(embeddings, [-1, embedding_dim], name=layer_name)
 
 
 def reduce_tanh(batch_tensor):
@@ -173,11 +172,11 @@ def evaluate_triples(triple_batch, embeddings, embedding_dim, label=None):
     # Load embeddings
     with tf.device('/cpu:0'):
         head_column = tf.slice(triple_batch, [0, 0], [-1, 1], name='h_id')
-        head_embeddings, head_bias = get_embedding('h', head_column, embeddings, embedding_dim)
+        head_embeddings = get_embedding('h', head_column, embeddings, embedding_dim)
         tail_column = tf.slice(triple_batch, [0, 1], [-1, 1], name='t_id')
-        tail_embeddings, tail_bias = get_embedding('t', tail_column, embeddings, embedding_dim)
+        tail_embeddings = get_embedding('t', tail_column, embeddings, embedding_dim)
         relation_column = tf.slice(triple_batch, [0, 2], [-1, 1], name='r_id')
-        relation_embeddings, relation_bias = get_embedding('r', relation_column, embeddings, embedding_dim)
+        relation_embeddings = get_embedding('r', relation_column, embeddings, embedding_dim)
 
     # Compute loss
     with tf.name_scope('eval'):
@@ -188,11 +187,11 @@ def evaluate_triples(triple_batch, embeddings, embedding_dim, label=None):
             score = tf.multiply(relation_embeddings, circular_correlation(head_embeddings, tail_embeddings))
 
         if FLAGS.log_loss and label:
-            score = tf.scalar_mul(-label, score) + head_bias + tail_bias + relation_bias
+            score = tf.scalar_mul(-label, score)
             loss = tf.log(1. + tf.exp(score))
             # TODO: regularization
         else:
-            loss = reduce_tanh(score + tail_bias + relation_bias)
+            loss = reduce_tanh(score)
 
         variable_summaries(loss)
 
@@ -232,7 +231,6 @@ def run_training(data):
     with tf.device('/cpu'):
         # Initialize embeddings
         embeddings = init_embedding('embeddings', data.entity_count, embedding_dim)
-        tf.summary.histogram('embeddings', embeddings)
 
         # Initialize tables for type-safe corruption (to avoid junk triples like 'Jeff', 'Employer', 'Java')
         with tf.name_scope('tables'):
@@ -293,6 +291,8 @@ def run_training(data):
                                                decay_rate=FLAGS.learning_decay_rate)
         tf.summary.scalar('learning_rate', lr_decay)
         optimizer = tf.train.GradientDescentOptimizer(lr_decay).minimize(loss, global_step)
+
+        tf.summary.histogram('embeddings', embeddings)
 
     summaries = tf.summary.merge_all()
 
