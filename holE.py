@@ -422,6 +422,7 @@ def infer_triples():
             coord = tf.train.Coordinator()
             threads = tf.train.start_queue_runners(sess=sess, coord=coord)
 
+            # TODO: this is a mess
             try:
                 raw_reciprocal_rank = []
                 filtered_reciprocal_rank = []
