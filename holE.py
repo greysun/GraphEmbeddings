@@ -480,9 +480,9 @@ def infer_triples():
                         if FLAGS.infer_typesafe and relation not in relation_ids:
                             continue
 
-                        # TODO: only evaluate on appropriate type tails, when available
-                        candidate_triples = np.array(list(
-                            itertools.product([head], range(data.relation_count, data.entity_count), [relation])))
+                        candidate_tails = data.type_to_ids[tail_type] if FLAGS.infer_typesafe else \
+                            range(data.relation_count, data.entity_count)
+                        candidate_triples = np.array(list(itertools.product([head], candidate_tails, [relation])))
                         feed_dict = {triple_batch: candidate_triples}
                         triples, batch_loss = sess.run([triple_batch, eval_loss], feed_dict)
 
