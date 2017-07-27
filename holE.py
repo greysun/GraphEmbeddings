@@ -429,30 +429,32 @@ def eval_link_prediction(scores, id_to_metadata, true_triples, test_triples, raw
         if tail_id in true_triples[head_id][relation_id]:
             print '\tTRAIN {}: {}\thttps://diffbot.com/entity/{}'.format(raw_rank, loss, id_to_metadata[tail_id])
             continue
-        elif tail_id in test_triples[head_id][relation_id]:
-            raw_positions.append(raw_rank)
 
         filtered_rank += 1
         if tail_id in test_triples[head_id][relation_id]:
+            raw_positions.append(raw_rank)
             filtered_positions.append(filtered_rank)
             print '\tMATCH {}: {}\thttps://diffbot.com/entity/{}'.format(filtered_rank, loss, id_to_metadata[tail_id])
             continue
-        elif filtered_rank < 5:
+        elif filtered_rank <= 3:
             print '\tGUESS {}: {}\thttps://diffbot.com/entity/{}'.format(filtered_rank, loss, id_to_metadata[tail_id])
 
 
 def infer_triples():
     data = init_inference_data()
-    # Consider locations current location, location (region, country)
-    #relation_ids = [10, 13, 14]
-    relation_ids = [9, 10]
+
+    # TODO: load these types from relation_ids (when available)
+    relation_ids = [10, 13, 14]
     tail_type = 'A'
+
+    candidate_tails = data.type_to_ids[tail_type] if FLAGS.infer_typesafe else \
+        range(data.relation_count, data.entity_count)
 
     with tf.name_scope('inference'):
         embeddings = init_embedding('embeddings', data.entity_count)
 
-        triple_batch = tf.placeholder(tf.int64, [len(data.type_to_ids[tail_type]), 3], 'triples') \
-            if FLAGS.infer_typesafe else tf.placeholder(tf.int64, [data.entity_count-data.relation_count, 3], 'triples')
+        triple_batch = tf.placeholder(tf.int64, [len(candidate_tails), 3], 'triples') \
+            if FLAGS.infer_typesafe else tf.placeholder(tf.int64, [len(candidate_tails), 3], 'triples')
         eval_loss = evaluate_triples(triple_batch, embeddings)
 
         # Load embeddings
@@ -480,8 +482,6 @@ def infer_triples():
                         if FLAGS.infer_typesafe and relation not in relation_ids:
                             continue
 
-                        candidate_tails = data.type_to_ids[tail_type] if FLAGS.infer_typesafe else \
-                            range(data.relation_count, data.entity_count)
                         candidate_triples = np.array(list(itertools.product([head], candidate_tails, [relation])))
                         feed_dict = {triple_batch: candidate_triples}
                         triples, batch_loss = sess.run([triple_batch, eval_loss], feed_dict)
@@ -599,7 +599,7 @@ if __name__ == '__main__':
         '--data_dir',
         type=str,
         default='diffbot_data/kg_0.01',
-        help='Input data directory. Must contain {triples.txt, entity_metadata.tsv, relation_ids.txt}'
+        help='Input data directory.'
     )
     parser.add_argument(
         '--reader_threads',
