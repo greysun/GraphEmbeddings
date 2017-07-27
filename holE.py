@@ -22,7 +22,7 @@ from tensorflow.python import debug as tf_debug
 FLAGS = None
 
 
-class HolEData:
+class HolEData(object):
     def __init__(self):
         self.type_to_ids = defaultdict(list)
         self.id_to_type = dict()
@@ -39,7 +39,7 @@ def init_table(key_dtype, value_dtype, name, type_to_ids=False):
                                               default_value=default_value, shared_name=name, name=name)
 
 
-def get_the_data():
+def init_data():
     entity_file = os.path.join(FLAGS.data_dir, 'entity_metadata.tsv')
     relation_file = os.path.join(FLAGS.data_dir, 'relation_ids.txt')
     corrupt_triple_file = os.path.join(FLAGS.data_dir, 'triples.txt')
@@ -331,8 +331,9 @@ def run_training(data):
                     # Train and log batch to summary_writer
                     if batch % (batch_count / 16) == 0:
                         model, summary = sess.run([optimizer, summaries])
-                        summary_writer.add_summary(summary, epoch * batch_count + batch)
-                        print '\tSaved summary for step {}...'.format(epoch * batch_count + batch)
+                        step = (epoch - 1) * batch_count + batch
+                        summary_writer.add_summary(summary, step)
+                        print '\tSaved summary for step {}...'.format(step)
 
                     else:
                         sess.run([optimizer])
@@ -351,59 +352,101 @@ def run_training(data):
         coord.join(threads)
 
 
-def infer_triples():
-    # TODO: this should be loaded from the saved model
+class HolEInferenceData(HolEData):
+    def __init__(self):
+        self.id_to_metadata = dict()
+        # TODO: this won't scale up to large datasets
+        self.true_triples = defaultdict(lambda: defaultdict(set))
+        self.test_triples = defaultdict(lambda: defaultdict(set))
+        super(HolEInferenceData, self).__init__()
+
+
+def init_inference_data():
     entity_file = os.path.join(FLAGS.data_dir, 'entity_metadata.tsv')
-    skill_train = os.path.join(FLAGS.data_dir, 'train_skills.txt')
-    skill_test = os.path.join(FLAGS.data_dir, 'test_skills.txt')
+    train_triples = os.path.join(FLAGS.data_dir, 'triples.txt')
+    valid_triples = os.path.join(FLAGS.data_dir, 'triples-valid.txt')
+    test_triples = os.path.join(FLAGS.data_dir, 'test_positive_triples.txt')
 
-    type_to_ids = defaultdict(list)
-    id_to_metadata = dict()
+    data = HolEInferenceData()
 
-    entity_count = 0
     with open(entity_file, 'r') as f:
         next(f)  # skip header
         for line in f:
-            entity_count += 1
-            index, diffbot_id, name, diffbot_type = line.strip().split('\t')
+            data.entity_count += 1
+            index, entity_id, name, entity_type = line.strip().split('\t')
             index = int(index)
-            type_to_ids[diffbot_type].append(index)
-            id_to_metadata[index] = diffbot_id + ' ' + name
+            data.type_to_ids[entity_type].append(index)
+            data.id_to_metadata[index] = entity_id + ' ' + name
 
-    print 'Types: ', {k: len(v) for k, v in type_to_ids.iteritems()}
+    print 'Types: ', {k: len(v) for k, v in data.type_to_ids.iteritems()}
 
-    infer_heads = set()
-    train_skills = defaultdict(list)
-    test_skills = defaultdict(list)
-
-    with open(skill_test, 'r') as f:
+    with open(test_triples, 'r') as f:
         for line in f:
-            head_id, skill_id, _ = line.strip().split('\t')
+            head_id, tail_id, relation_id = line.strip().split('\t')
             head_id = int(head_id)
-            skill_id = int(skill_id)
-            infer_heads.add(head_id)
-            test_skills[head_id].append(skill_id)
+            tail_id = int(tail_id)
+            relation_id = int(relation_id)
+            data.test_triples[head_id][relation_id].add(tail_id)
 
-    with open(skill_train, 'r') as f:
-        for line in f:
-            head_id, skill_id, _ = line.strip().split('\t')
-            head_id = int(head_id)
-            skill_id = int(skill_id)
-            if head_id in test_skills:
-                train_skills[head_id].append(skill_id)
+    for triple_file in [train_triples, valid_triples]:
+        with open(triple_file, 'r') as f:
+            for line in f:
+                head_id, tail_id, relation_id = line.strip().split('\t')
+                head_id = int(head_id)
+                tail_id = int(tail_id)
+                relation_id = int(relation_id)
+
+                if relation_id in data.test_triples[head_id]:
+                    data.true_triples[head_id][relation_id].add(tail_id)
+
+    return data
+
+
+def eval_link_prediction(scores, id_to_metadata, true_triples, test_triples, raw_positions, filtered_positions):
+    heap = []
+    for pair in scores:
+        loss = pair[0][0]
+        heappush(heap, (loss, tuple(pair[1])))
+        person_id = id_to_metadata[pair[1][0]]
+        relation = id_to_metadata[pair[1][2]]
+
+    # TODO: adapt format for Diffbot/FB15k
+    print 'https://diffbot.com/entity/' + person_id, relation
+
+    raw_rank = 0
+    filtered_rank = 0
+    while heap:
+        pair = heappop(heap)
+        loss = pair[0]
+        head_id = pair[1][0]
+        tail_id = pair[1][1]
+        relation_id = pair[1][2]
+
+        raw_rank += 1
+        if tail_id in true_triples[head_id][relation_id]:
+            print '\tTRAIN {}: {}\thttps://diffbot.com/entity/{}'.format(raw_rank, loss, id_to_metadata[tail_id])
+            continue
+        elif tail_id in test_triples[head_id][relation_id]:
+            raw_positions.append(raw_rank)
+
+        filtered_rank += 1
+        if tail_id in test_triples[head_id][relation_id]:
+            filtered_positions.append(filtered_rank)
+            print '\tMATCH {}: {}\thttps://diffbot.com/entity/{}'.format(filtered_rank, loss, id_to_metadata[tail_id])
+            continue
+        elif filtered_rank < 5:
+            print '\tGUESS {}: {}\thttps://diffbot.com/entity/{}'.format(filtered_rank, loss, id_to_metadata[tail_id])
+
+
+def infer_triples():
+    data = init_inference_data()
 
     # TODO: evaluate (current) location inference
 
-    # Infer skills
-    infer_relations = [6]
-
-    # Candidate targets
-    infer_tails = type_to_ids['S']
-
     with tf.name_scope('inference'):
-        embeddings = init_embedding('embeddings', entity_count)
+        embeddings = init_embedding('embeddings', data.entity_count)
 
-        triple_batch = tf.placeholder(tf.int64, [len(infer_tails), 3], 'triples')
+        triple_batch = tf.placeholder(tf.int64, [data.entity_count, 3], 'triples')
         eval_loss = evaluate_triples(triple_batch, embeddings)
 
         # Load embeddings
@@ -422,75 +465,36 @@ def infer_triples():
             coord = tf.train.Coordinator()
             threads = tf.train.start_queue_runners(sess=sess, coord=coord)
 
-            # TODO: this is a mess
             try:
-                raw_reciprocal_rank = []
-                filtered_reciprocal_rank = []
-                h1 = []
-                h3 = []
-                h10 = []
+                raw_positions = []
+                filtered_positions = []
 
-                for head in infer_heads:
-                    candidate_triples = np.array(list(itertools.product([head], infer_tails, infer_relations)))
-                    feed_dict = {triple_batch: candidate_triples}
-                    triples, batch_loss = sess.run([triple_batch, eval_loss], feed_dict)
+                for head in data.test_triples:
+                    for relation in data.test_triples[head]:
+                        # TODO: only evaluate on appropriate type tails, when available
+                        candidate_triples = np.array(list(itertools.product([head], range(0, data.entity_count),
+                                                                            [relation])))
+                        feed_dict = {triple_batch: candidate_triples}
+                        triples, batch_loss = sess.run([triple_batch, eval_loss], feed_dict)
 
-                    heap = []
-                    for pair in zip(batch_loss, triples):
-                        loss = pair[0][0]
-                        heappush(heap, (loss, tuple(pair[1])))
-                        person_id = id_to_metadata[pair[1][0]]
+                        eval_link_prediction(zip(batch_loss, triples), data.id_to_metadata,
+                                             data.true_triples, data.test_triples,
+                                             raw_positions, filtered_positions)
 
-                    print 'https://diffbot.com/entity/' + person_id + ' skills:'
+                raw_positions = np.array(raw_positions)
+                raw_mrr = np.mean(1.0 / raw_positions)
+                mean_raw_pos = np.mean(raw_positions)
 
-                    raw_rank = 0
-                    filtered_rank = 0
-                    hits_at_one = 0
-                    hits_at_three = 0
-                    hits_at_ten = 0
-                    max_hits = 0
+                filtered_positions = np.array(filtered_positions)
+                filtered_mrr = np.mean(1.0 / filtered_positions)
+                mean_filtered_pos = np.mean(filtered_positions)
 
-                    while heap:
-                        pair = heappop(heap)
-                        loss = pair[0]
-                        head_id = pair[1][0]
-                        skill_id = pair[1][1]
-                        max_hits = len(set(test_skills[head_id]) | set(train_skills[head_id]))
-
-                        raw_rank += 1
-                        if raw_rank <= 10 and (skill_id in train_skills[head_id] or skill_id in test_skills[head_id]):
-                            hits_at_ten += 1
-                            if raw_rank <= 3:
-                                hits_at_three += 1
-                            if raw_rank == 1:
-                                hits_at_one += 1
-
-                        if skill_id in train_skills[head_id]:
-                            print '\tTRAIN {}: {}\thttps://diffbot.com/entity/{}' \
-                                .format(raw_rank, loss, id_to_metadata[skill_id])
-                            continue
-                        filtered_rank += 1
-                        frr = 1. / filtered_rank
-
-                        if skill_id in test_skills[head_id]:
-                            raw_reciprocal_rank.append(1. / raw_rank)
-                            raw_reciprocal_rank.append(1. / raw_rank)
-                            filtered_reciprocal_rank.append(frr)
-                            print '\tMATCH {}: {}\thttps://diffbot.com/entity/{}'\
-                                .format(filtered_rank, loss, id_to_metadata[skill_id])
-                            continue
-
-                        if filtered_rank < 10:
-                            print '\tGUESS {}: {}\thttps://diffbot.com/entity/{}'\
-                                .format(filtered_rank, loss, id_to_metadata[skill_id])
-
-                    h1.append(hits_at_one)
-                    h3.append(hits_at_three / min(3., max_hits))
-                    h10.append(hits_at_ten / min(10., max_hits))
-
-                print '\n\n\nRaw MRR: ', np.mean(raw_reciprocal_rank)
-                print 'Filtered MRR: ', np.mean(filtered_reciprocal_rank)
-                print 'Hits at 1: {}, 3: {}, 10: {}'.format(np.mean(h1), np.mean(h3), np.mean(h10))
+                hits1 = np.mean(filtered_positions <= 1).sum() * 100
+                hits3 = np.mean(filtered_positions <= 3).sum() * 100
+                hits10 = np.mean(filtered_positions <= 10).sum() * 100
+                print '\n\n\nRaw MRR: {} (mean position: {})'.format(raw_mrr, mean_raw_pos)
+                print 'Filtered MRR: {} (mean position: {})'.format(filtered_mrr, mean_filtered_pos)
+                print 'Hits at 1: {}, 3: {}, 10: {}'.format(hits1, hits3, hits10)
 
             except tf.errors.OutOfRangeError:
                 print('Done evaluation -- triple limit reached')
@@ -505,7 +509,7 @@ def main(_):
     if FLAGS.infer:
         infer_triples()
     else:
-        training_data = get_the_data()
+        training_data = init_data()
         # TODO: param search
         run_training(training_data)
 
