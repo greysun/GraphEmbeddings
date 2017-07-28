@@ -30,6 +30,7 @@ class HolEData(object):
         self.relation_count = 0
         self.triple_count = 0
         self.triples = None
+        self.validation_triples = None
 
 
 def init_table(key_dtype, value_dtype, name, type_to_ids=False):
@@ -43,6 +44,7 @@ def init_data():
     entity_file = os.path.join(FLAGS.data_dir, 'entity_metadata.tsv')
     relation_file = os.path.join(FLAGS.data_dir, 'relation_ids.txt')
     corrupt_triple_file = os.path.join(FLAGS.data_dir, 'triples.txt')
+    valid_triple_file = os.path.join(FLAGS.data_dir, 'triples-valid.txt')
 
     data = HolEData()
     data.relation_count = sum(1 for line in open(relation_file))
@@ -52,9 +54,8 @@ def init_data():
         next(f)  # skip header
         for line in f:
             data.entity_count += 1
-            index, diffbot_id, name, diffbot_type = line.split('\t')
+            index, diffbot_id, name, diffbot_type = line.strip().split('\t')
             index = int(index)
-            diffbot_type = diffbot_type.strip()
             data.type_to_ids[diffbot_type].append(index)
             data.id_to_type[index] = diffbot_type
 
@@ -70,13 +71,23 @@ def init_data():
         # TODO: shard files, use TfrecordReader
         filename_queue = tf.train.string_input_producer([corrupt_triple_file] * FLAGS.num_epochs)
         key, value = reader.read(filename_queue)
-
         column_defaults = [tf.constant([], dtype=tf.int32),
                            tf.constant([], dtype=tf.int32),
                            tf.constant([], dtype=tf.int32)]
 
         head_ids, tail_ids, relation_ids = tf.decode_csv(value, column_defaults, field_delim='\t')
         data.triples = tf.stack([head_ids, tail_ids, relation_ids])
+
+    with tf.name_scope('valid_input'):
+        reader = tf.TextLineReader()
+        filename_queue = tf.train.string_input_producer([valid_triple_file])
+        key, value = reader.read(filename_queue)
+        column_defaults = [tf.constant([], dtype=tf.int32),
+                           tf.constant([], dtype=tf.int32),
+                           tf.constant([], dtype=tf.int32)]
+
+        head_ids, tail_ids, relation_ids = tf.decode_csv(value, column_defaults, field_delim='\t')
+        data.validation_triples = tf.stack([head_ids, tail_ids, relation_ids])
 
     return data
 
@@ -196,6 +207,37 @@ def evaluate_triples(triple_batch, embeddings, label=None):
     return loss
 
 
+def evaluate_batch(triple_batch, embeddings, type_to_ids_table, id_to_type_table, relation_count):
+    if FLAGS.log_loss:
+        losses = []
+        with tf.name_scope('positive'):
+            train_loss = evaluate_triples(triple_batch, embeddings, 1)
+            # Increase the weight of the positive case
+            # TODO: decrease this weight over time
+            losses.append(tf.scalar_mul(FLAGS.negative_ratio, train_loss))
+        with (tf.name_scope('corrupt')):
+            for i in range(FLAGS.negative_ratio):
+                with tf.name_scope('c' + str(i)):
+                    corrupt_triples = corrupt_batch(type_to_ids_table, id_to_type_table,
+                                                    relation_count, triple_batch)
+                    corrupt_loss = evaluate_triples(corrupt_triples, embeddings, -1)
+                    losses.append(corrupt_loss)
+
+        # TODO: support validation triples in log_loss
+
+        return tf.concat(losses, 0)
+
+    else:
+        with tf.name_scope('positive'):
+            train_loss = evaluate_triples(triple_batch, embeddings)
+        with tf.name_scope('corrupt'):
+            corrupt_triples = corrupt_batch(type_to_ids_table, id_to_type_table, relation_count, triple_batch)
+            corrupt_loss = evaluate_triples(corrupt_triples, embeddings)
+
+        # Score and minimize hinge-loss
+        return tf.maximum(train_loss - corrupt_loss + FLAGS.margin, 0)
+
+
 def summarize(var):
     with tf.name_scope('summaries'):
         mean = tf.reduce_mean(var)
@@ -239,50 +281,30 @@ def run_training(data):
 
     with tf.name_scope('batch'):
         # Sample triples
-        triple_batch = tf.train.shuffle_batch([data.triples], FLAGS.batch_size,
-                                              num_threads=FLAGS.reader_threads,
-                                              capacity=2*data.triple_count,
-                                              # TODO: this probably won't scale
-                                              min_after_dequeue=data.triple_count,
-                                              allow_smaller_final_batch=False,
-                                              name="shuffle_batch")
+        triple_batch = tf.train.shuffle_batch([data.triples], FLAGS.batch_size, num_threads=FLAGS.reader_threads,
+                                              capacity=2*data.triple_count, min_after_dequeue=data.triple_count,
+                                              allow_smaller_final_batch=False, name='shuffle_batch')
 
         # Evaluate triples
-        if FLAGS.log_loss:
-            losses = []
-            with tf.name_scope('train'):
-                train_loss = evaluate_triples(triple_batch, embeddings, 1)
-                # Increase the weight of the positive case
-                # TODO: decrease this weight over time
-                losses.append(tf.scalar_mul(FLAGS.negative_ratio, train_loss))
-            with (tf.name_scope('corrupt')):
-                for i in range(FLAGS.negative_ratio):
-                    with tf.name_scope('c' + str(i)):
-                        corrupt_triples = corrupt_batch(type_to_ids_table, id_to_type_table,
-                                                        data.relation_count, triple_batch)
-                        corrupt_loss = evaluate_triples(corrupt_triples, embeddings, -1)
-                        losses.append(corrupt_loss)
+        with tf.name_scope('eval'):
+            loss = evaluate_batch(triple_batch, embeddings, type_to_ids_table, id_to_type_table, data.relation_count)
 
-            # Minimize log-loss
-            loss = tf.concat(losses, 0)
-        else:
-            with tf.name_scope('train'):
-                train_loss = evaluate_triples(triple_batch, embeddings)
-            with (tf.name_scope('corrupt')):
-                corrupt_triples = corrupt_batch(type_to_ids_table, id_to_type_table, data.relation_count, triple_batch)
-                corrupt_loss = evaluate_triples(corrupt_triples, embeddings)
+        # Gradient Descent
+        with tf.name_scope('learn'):
+            global_step = tf.Variable(0, name='global_step', trainable=False)
+            lr_decay = tf.train.inverse_time_decay(FLAGS.learning_rate, global_step,
+                                                   decay_steps=FLAGS.learning_decay_steps * batch_count,
+                                                   decay_rate=FLAGS.learning_decay_rate)
+            tf.summary.scalar('learning_rate', lr_decay)
+            optimizer = tf.train.GradientDescentOptimizer(lr_decay).minimize(loss, global_step)
 
-            # Score and minimize hinge-loss
-            loss = tf.maximum(train_loss - corrupt_loss + FLAGS.margin, 0)
-
-        global_step = tf.Variable(0, name='global_step', trainable=False)
-        lr_decay = tf.train.inverse_time_decay(FLAGS.learning_rate, global_step,
-                                               decay_steps=FLAGS.learning_decay_steps*batch_count,
-                                               decay_rate=FLAGS.learning_decay_rate)
-        tf.summary.scalar('learning_rate', lr_decay)
-        optimizer = tf.train.GradientDescentOptimizer(lr_decay).minimize(loss, global_step)
-
-        tf.summary.histogram('embeddings', embeddings)
+    # Validation
+    with tf.name_scope('validation'):
+        valid = tf.train.shuffle_batch([data.validation_triples], FLAGS.batch_size,
+                                       capacity=4*FLAGS.batch_size, min_after_dequeue=FLAGS.batch_size,
+                                       allow_smaller_final_batch=False, name='shuffle_batch')
+        valid_loss = evaluate_batch(valid, embeddings, type_to_ids_table, id_to_type_table, data.relation_count)
+        valid_loss_mean = tf.reduce_mean(valid_loss)
 
     summaries = tf.summary.merge_all()
     init_op = tf.global_variables_initializer()
@@ -306,48 +328,51 @@ def run_training(data):
 
         try:
             # Populate id_to_type mapping
+            print 'Populating id_to_type table...'
             feed_dict = {id_to_type_keys: np.array(data.id_to_type.keys()),
                          id_to_type_values: np.array(data.id_to_type.values())}
             sess.run([id_to_type_insert], feed_dict)
 
             epoch = 0
+            pocket_loss = 2.
             while not supervisor.should_stop():
                 epoch += 1
 
+                print 'Initializing projector...'
                 projector_config = projector.ProjectorConfig()
                 embeddings_config = projector_config.embeddings.add()
                 embeddings_config.tensor_name = embeddings.name
                 projector.visualize_embeddings(summary_writer, projector_config)
 
                 # Shuffle the available corrupt entity ids and insert every epoch
+                print 'Resampling type_to_id table...'
                 padded_values = np.array([[random.choice(v) for _ in range(FLAGS.padded_size)]
                                           for v in data.type_to_ids.values()])
                 feed_dict = {type_to_ids_keys: np.array(data.type_to_ids.keys()),
                              type_to_ids_values: np.array(padded_values)}
                 sess.run([type_to_ids_insert], feed_dict)
 
+                print 'Training epoch {}...'.format(epoch)
                 for batch in range(1, batch_count):
-                    # TODO: print eval scores from validation
-                    # Train and log batch to summary_writer
+                    # Run validation and log to summary_writer
                     if batch % (batch_count / 16) == 0:
-                        model, summary = sess.run([optimizer, summaries])
+                        vlm, summary = sess.run([valid_loss_mean, summaries])
                         step = (epoch - 1) * batch_count + batch
                         summary_writer.add_summary(summary, step)
-                        print '\tSaved summary for step {}...'.format(step)
-
-                    else:
-                        sess.run([optimizer])
+                        print '\tStep {} Validation Loss: {}...'.format(step, vlm)
+                    sess.run([optimizer])
 
                 # Checkpoint
-                # TODO: only checkpoint if validation MRR decreases
-                save_path = saver.save(sess, FLAGS.output_dir + '/model.ckpt', epoch)
-                print('Epoch {}, (Model saved as {})'.format(epoch, save_path))
+                if vlm < pocket_loss:
+                    pocket_loss = vlm
+                    save_path = saver.save(sess, FLAGS.output_dir + '/model.ckpt', epoch)
+                    print('Epoch {}, (Model saved as {})'.format(epoch, save_path))
 
         except tf.errors.OutOfRangeError:
             print('Done training -- epoch limit reached')
         finally:
+            print 'Stopping training...'
             coord.request_stop()
-            saver.save(sess, FLAGS.output_dir + '/model.ckpt')
 
         coord.join(threads)
 
@@ -443,7 +468,7 @@ def eval_link_prediction(scores, id_to_metadata, true_triples, test_triples, raw
 def infer_triples():
     data = init_inference_data()
 
-    # TODO: load these types from relation_ids (when available)
+    # TODO: learn tail_types for each relation
     relation_ids = [10, 13, 14]
     tail_type = 'A'
 
@@ -453,8 +478,7 @@ def infer_triples():
     with tf.name_scope('inference'):
         embeddings = init_embedding('embeddings', data.entity_count)
 
-        triple_batch = tf.placeholder(tf.int64, [len(candidate_tails), 3], 'triples') \
-            if FLAGS.infer_typesafe else tf.placeholder(tf.int64, [len(candidate_tails), 3], 'triples')
+        triple_batch = tf.placeholder(tf.int64, [None, 3], 'triples')
         eval_loss = evaluate_triples(triple_batch, embeddings)
 
         # Load embeddings
