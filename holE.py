@@ -168,8 +168,8 @@ def get_embedding(layer_name, entity_ids, embeddings):
     return tf.reshape(embeddings, [-1, FLAGS.embedding_dim], name=layer_name)
 
 
-def reduce_tanh(batch_tensor):
-    return tf.tanh(tf.reduce_sum(batch_tensor, 1, keep_dims=True))
+def reduce_eval(batch_tensor):
+    return tf.sigmoid(tf.reduce_sum(batch_tensor, 1, keep_dims=True))
 
 
 def circular_correlation(h, t):
@@ -200,7 +200,7 @@ def evaluate_triples(triple_batch, embeddings, label=None):
             loss = tf.log(1. + tf.exp(score))
             # TODO: regularization
         else:
-            loss = reduce_tanh(score)
+            loss = reduce_eval(score)
 
         summarize(loss)
 
