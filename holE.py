@@ -309,8 +309,7 @@ def run_training(data):
     summaries = tf.summary.merge_all()
     init_op = tf.global_variables_initializer()
     saver = tf.train.Saver()
-    supervisor = tf.train.Supervisor(logdir=FLAGS.output_dir)
-    with supervisor.managed_session() as sess:
+    with tf.Session() as sess:
         if FLAGS.debug:
             sess = tf_debug.LocalCLIDebugWrapperSession(sess)
             sess.add_tensor_filter('has_inf_or_nan', tf_debug.has_inf_or_nan)
@@ -335,7 +334,7 @@ def run_training(data):
 
             epoch = 0
             pocket_loss = 2.
-            while not supervisor.should_stop():
+            while True:
                 epoch += 1
 
                 print 'Initializing projector...'
