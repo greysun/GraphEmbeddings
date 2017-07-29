@@ -513,6 +513,7 @@ def infer_triples():
                                              data.true_triples, data.test_triples,
                                              raw_positions, filtered_positions)
 
+                # TODO: push these calculations into the graph, refactor for use in training validation
                 raw_positions = np.array(raw_positions)
                 raw_mrr = np.mean(1.0 / raw_positions)
                 mean_raw_pos = np.mean(raw_positions)
