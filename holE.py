@@ -23,6 +23,7 @@ FLAGS = None
 
 
 class HolEData(object):
+    """Pre-processing data used during training and inference."""
     def __init__(self):
         self.type_to_ids = defaultdict(list)
         self.id_to_type = dict()
@@ -34,21 +35,22 @@ class HolEData(object):
 
 
 def init_table(key_dtype, value_dtype, name, type_to_ids=False):
-    """Initializes the table variable and all of the inputs as constants."""
+    """Initializes a TF table variable with the appropriate default_value."""
     default_value = tf.constant(FLAGS.padded_size * [-1], value_dtype) if type_to_ids else tf.constant('?', value_dtype)
     return tf.contrib.lookup.MutableHashTable(key_dtype=key_dtype, value_dtype=value_dtype,
                                               default_value=default_value, shared_name=name, name=name)
 
 
 def init_data():
+    """Model pre-processing."""
     entity_file = os.path.join(FLAGS.data_dir, 'entity_metadata.tsv')
     relation_file = os.path.join(FLAGS.data_dir, 'relation_ids.txt')
-    corrupt_triple_file = os.path.join(FLAGS.data_dir, 'triples.txt')
+    train_triple_file = os.path.join(FLAGS.data_dir, 'triples.txt')
     valid_triple_file = os.path.join(FLAGS.data_dir, 'triples-valid.txt')
 
     data = HolEData()
     data.relation_count = sum(1 for line in open(relation_file))
-    data.triple_count = sum(1 for line in open(corrupt_triple_file))
+    data.triple_count = sum(1 for line in open(train_triple_file))
 
     with open(entity_file, 'r') as f:
         next(f)  # skip header
@@ -69,7 +71,7 @@ def init_data():
         # Load triples from triple_file TSV
         reader = tf.TextLineReader()
         # TODO: shard files, use TfrecordReader
-        filename_queue = tf.train.string_input_producer([corrupt_triple_file] * FLAGS.num_epochs)
+        filename_queue = tf.train.string_input_producer([train_triple_file] * FLAGS.num_epochs)
         key, value = reader.read(filename_queue)
         column_defaults = [tf.constant([], dtype=tf.int32),
                            tf.constant([], dtype=tf.int32),
@@ -148,22 +150,16 @@ def corrupt_relations(relation_count, triples):
 
 
 def corrupt_batch(type_to_ids, id_to_type, relation_count, triples):
+    # TODO: consider corrupting more entities as training time increases
     should_corrupt_relations = tf.less(tf.random_uniform([], 0, 1.0), 0.5, 'should_corrupt_relations')
     return tf.cond(should_corrupt_relations,
                    lambda: corrupt_relations(relation_count, triples),
                    lambda: corrupt_entities(type_to_ids, id_to_type, triples))
 
 
-def init_embedding(name, entity_count):
-    embedding = tf.get_variable(name, [entity_count, FLAGS.embedding_dim],
-                                initializer=tf.contrib.layers.xavier_initializer(uniform=False))
-    return embedding
-
-
 def get_embedding(layer_name, entity_ids, embeddings):
     entity_embeddings = tf.reshape(tf.nn.embedding_lookup(embeddings, entity_ids, max_norm=1),
                                    [-1, FLAGS.embedding_dim])
-    # TODO: subtract the mean for entities of a given type
     embeddings = tf.slice(entity_embeddings, [0, 0], [-1, FLAGS.embedding_dim])
     return tf.reshape(embeddings, [-1, FLAGS.embedding_dim], name=layer_name)
 
@@ -212,9 +208,7 @@ def evaluate_batch(triple_batch, embeddings, type_to_ids_table, id_to_type_table
         losses = []
         with tf.name_scope('positive'):
             train_loss = evaluate_triples(triple_batch, embeddings, 1)
-            # Increase the weight of the positive case
-            # TODO: decrease this weight over time
-            losses.append(tf.scalar_mul(FLAGS.negative_ratio, train_loss))
+            losses.append(train_loss)
         with (tf.name_scope('corrupt')):
             for i in range(FLAGS.negative_ratio):
                 with tf.name_scope('c' + str(i)):
@@ -235,7 +229,10 @@ def evaluate_batch(triple_batch, embeddings, type_to_ids_table, id_to_type_table
             corrupt_loss = evaluate_triples(corrupt_triples, embeddings)
 
         # Score and minimize hinge-loss
-        return tf.maximum(train_loss - corrupt_loss + FLAGS.margin, 0)
+        loss = tf.maximum(train_loss - corrupt_loss + FLAGS.margin, name="loss")
+        summarize(loss)
+                
+        return loss
 
 
 def summarize(var):
@@ -264,7 +261,8 @@ def run_training(data):
             raise
 
     # Initialize embeddings
-    embeddings = init_embedding('embeddings', data.entity_count)
+    embeddings = tf.get_variable('embeddings', [data.entity_count, FLAGS.embedding_dim],
+                                 initializer=tf.contrib.layers.xavier_initializer(uniform=False))
 
     # Initialize tables for type-safe corruption (to avoid junk triples like 'Jeff', 'Employer', 'Java')
     with tf.name_scope('corruption_tables'):
@@ -476,7 +474,8 @@ def infer_triples():
         range(data.relation_count, data.entity_count)
 
     with tf.name_scope('inference'):
-        embeddings = init_embedding('embeddings', data.entity_count)
+        embeddings = tf.get_variable('embeddings', [data.entity_count, FLAGS.embedding_dim],
+                                     initializer=tf.contrib.layers.xavier_initializer(uniform=False))
 
         triple_batch = tf.placeholder(tf.int64, [None, 3], 'triples')
         eval_loss = evaluate_triples(triple_batch, embeddings)
