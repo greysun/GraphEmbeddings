@@ -354,6 +354,7 @@ def run_training(data):
                 print 'Training epoch {}...'.format(epoch)
                 for batch in range(1, batch_count):
                     # Run validation and log to summary_writer
+                    # TODO: this should run the entire validation set
                     if batch % (batch_count / 16) == 0:
                         vlm, summary = sess.run([valid_loss_mean, summaries])
                         step = (epoch - 1) * batch_count + batch
@@ -364,8 +365,8 @@ def run_training(data):
                 # Checkpoint
                 if vlm < pocket_loss:
                     pocket_loss = vlm
-                    save_path = saver.save(sess, FLAGS.output_dir + '/model.ckpt', epoch)
-                    print('Epoch {}, (Model saved as {})'.format(epoch, save_path))
+                    saver.save(sess, FLAGS.output_dir + '/model.ckpt')
+                    print('Epoch {}, (Model saved with loss {})'.format(epoch, vlm))
 
         except tf.errors.OutOfRangeError:
             print('Done training -- epoch limit reached')
@@ -468,7 +469,7 @@ def infer_triples():
     data = init_inference_data()
 
     # TODO: learn tail_types for each relation
-    relation_ids = [10, 13, 14]
+    relation_ids = [10, 13]
     tail_type = 'A'
 
     candidate_tails = data.type_to_ids[tail_type] if FLAGS.infer_typesafe else \
@@ -552,17 +553,17 @@ if __name__ == '__main__':
     parser.add_argument('--cpu', action='store_true', help='Disable GPU-only operations (namely FFT/iFFT).')
     parser.add_argument('--learning_rate', type=float, default=0.1, help='Initial learning rate.')
     parser.add_argument('--learning_decay_steps', type=float, default=16, help='Learning rate decay steps (in epochs).')
-    parser.add_argument('--learning_decay_rate', type=float, default=0.5, help='Learning decay rate.')
+    parser.add_argument('--learning_decay_rate', type=float, default=0, help='Learning decay rate.')
     parser.add_argument('--batch_size', type=int, default=512, help='Batch size.')
     parser.add_argument('--num_epochs', type=int, default=1000, help='Number of training epochs.')
-    parser.add_argument('--embedding_dim', type=int, default=128, help='Embedding dimension.')
+    parser.add_argument('--embedding_dim', type=int, default=256, help='Embedding dimension.')
     parser.add_argument('--log_loss', action='store_true', help='Use logistic loss istead of pairwise ranking loss.')
     parser.add_argument('--negative_ratio', type=int, default=1, help='Number of negative labels sampled in log_loss.')
-    parser.add_argument('--margin', type=float, default=1., help='Hinge loss margin.')
+    parser.add_argument('--margin', type=float, default=0.2, help='Hinge loss margin.')
     parser.add_argument('--padded_size', type=int, default=100000,
                         help='The maximum number of entities to use for each type while sampling corrupt triples.')
     parser.add_argument('--output_dir', type=str, default='holE-latest', help='Tensorboard Summary directory.')
-    parser.add_argument('--data_dir', type=str, default='diffbot_data/kg_0.01', help='Input data directory.')
+    parser.add_argument('--data_dir', type=str, default='diffbot_data/kg_0.01-20170731', help='Input data directory.')
     parser.add_argument('--reader_threads', type=int, default=4, help='Number of training triple file readers.')
     parser.add_argument('--resume_checkpoint', action='store_true', help='Resume training on the checkpoint model.')
     parser.add_argument('--debug', action='store_true', help='Run with interactive Tensorflow debugger.')
