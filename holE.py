@@ -16,7 +16,6 @@ import numpy as np
 import tensorflow as tf
 from collections import defaultdict
 from tensorflow.contrib.tensorboard.plugins import projector
-from tensorflow.python import debug as tf_debug
 
 
 FLAGS = None
@@ -204,6 +203,7 @@ def evaluate_triples(triple_batch, embeddings, label=None):
 
 
 def evaluate_batch(triple_batch, embeddings, type_to_ids_table, id_to_type_table, relation_count):
+    # TODO: experiment: minimize (max_train_loss), maximize (min_corrupt_loss)
     if FLAGS.log_loss:
         losses = []
         with tf.name_scope('positive'):
@@ -231,7 +231,7 @@ def evaluate_batch(triple_batch, embeddings, type_to_ids_table, id_to_type_table
         # Score and minimize hinge-loss
         loss = tf.maximum(train_loss - corrupt_loss + FLAGS.margin, name="loss")
         summarize(loss)
-                
+
         return loss
 
 
@@ -308,10 +308,6 @@ def run_training(data):
     init_op = tf.global_variables_initializer()
     saver = tf.train.Saver()
     with tf.Session() as sess:
-        if FLAGS.debug:
-            sess = tf_debug.LocalCLIDebugWrapperSession(sess)
-            sess.add_tensor_filter('has_inf_or_nan', tf_debug.has_inf_or_nan)
-
         sess.run(init_op)
 
         # Load the previous model if resume_checkpoint=True
@@ -481,21 +477,15 @@ def infer_triples():
         eval_loss = evaluate_triples(triple_batch, embeddings)
 
         # Load embeddings
-        saver = tf.train.Saver({'embeddings': embeddings})
+        saver = tf.train.Saver()
 
         with tf.Session() as sess:
-            if FLAGS.debug:
-                sess = tf_debug.LocalCLIDebugWrapperSession(sess)
-                sess.add_tensor_filter('has_inf_or_nan', tf_debug.has_inf_or_nan)
-
             init_op = tf.global_variables_initializer()
             sess.run(init_op)
-
             saver.restore(sess, FLAGS.output_dir + '/model.ckpt')
 
             coord = tf.train.Coordinator()
             threads = tf.train.start_queue_runners(sess=sess, coord=coord)
-
             try:
                 raw_positions = []
                 filtered_positions = []
@@ -552,7 +542,7 @@ if __name__ == '__main__':
     parser.add_argument('--cpu', action='store_true', help='Disable GPU-only operations (namely FFT/iFFT).')
     parser.add_argument('--learning_rate', type=float, default=0.1, help='Initial learning rate.')
     parser.add_argument('--learning_decay_steps', type=float, default=16, help='Learning rate decay steps (in epochs).')
-    parser.add_argument('--learning_decay_rate', type=float, default=0, help='Learning decay rate.')
+    parser.add_argument('--learning_decay_rate', type=float, default=0.5, help='Learning decay rate.')
     parser.add_argument('--batch_size', type=int, default=512, help='Batch size.')
     parser.add_argument('--num_epochs', type=int, default=1000, help='Number of training epochs.')
     parser.add_argument('--embedding_dim', type=int, default=256, help='Embedding dimension.')
@@ -565,7 +555,6 @@ if __name__ == '__main__':
     parser.add_argument('--data_dir', type=str, default='diffbot_data/kg_0.01-20170731', help='Input data directory.')
     parser.add_argument('--reader_threads', type=int, default=4, help='Number of training triple file readers.')
     parser.add_argument('--resume_checkpoint', action='store_true', help='Resume training on the checkpoint model.')
-    parser.add_argument('--debug', action='store_true', help='Run with interactive Tensorflow debugger.')
     parser.add_argument('--infer', action='store_true', help='Infer new triples from the latest checkpoint model.')
     parser.add_argument('--infer_typesafe', action='store_true', help='Infer triples using type-safe candidates.')
 
