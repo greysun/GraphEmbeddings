@@ -229,7 +229,7 @@ def evaluate_batch(triple_batch, embeddings, type_to_ids_table, id_to_type_table
             corrupt_loss = evaluate_triples(corrupt_triples, embeddings)
 
         # Score and minimize hinge-loss
-        loss = tf.maximum(train_loss - corrupt_loss + FLAGS.margin, name="loss")
+        loss = tf.maximum(train_loss - corrupt_loss + FLAGS.margin, 0, name="loss")
         summarize(loss)
 
         return loss
