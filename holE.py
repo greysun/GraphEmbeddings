@@ -1,4 +1,6 @@
 """
+Author: Benjamin Han
+
 Tensorflow implementation of Nickel et al, HolE, 2016
 
 See https://arxiv.org/pdf/1510.04935.pdf
