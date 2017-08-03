@@ -352,6 +352,12 @@ def run_training(data):
                     # Run validation and log to summary_writer
                     # TODO: this should run the entire validation set
                     if batch % (batch_count / 16) == 0:
+                        padded_values = np.array([[random.choice(v) for _ in range(FLAGS.padded_size)]
+                                                  for v in data.type_to_ids.values()])
+                        feed_dict = {type_to_ids_keys: np.array(data.type_to_ids.keys()),
+                                     type_to_ids_values: np.array(padded_values)}
+                        sess.run([type_to_ids_insert], feed_dict)
+                        
                         vlm, summary = sess.run([valid_loss_mean, summaries])
                         step = (epoch - 1) * batch_count + batch
                         summary_writer.add_summary(summary, step)
