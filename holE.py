@@ -1,5 +1,5 @@
 """
-Author: Benjamin Han
+Author: B Han
 
 Tensorflow implementation of Nickel et al, HolE, 2016
 
