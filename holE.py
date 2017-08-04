@@ -357,18 +357,19 @@ def run_training(data):
                         feed_dict = {type_to_ids_keys: np.array(data.type_to_ids.keys()),
                                      type_to_ids_values: np.array(padded_values)}
                         sess.run([type_to_ids_insert], feed_dict)
-                        
+
                         vlm, summary = sess.run([valid_loss_mean, summaries])
                         step = (epoch - 1) * batch_count + batch
                         summary_writer.add_summary(summary, step)
                         print '\tStep {} Validation Loss: {}...'.format(step, vlm)
-                    sess.run([optimizer])
 
-                # Checkpoint
-                if vlm < pocket_loss:
-                    pocket_loss = vlm
-                    saver.save(sess, FLAGS.output_dir + '/model.ckpt')
-                    print('Epoch {}, (Model saved with loss {})'.format(epoch, vlm))
+                        # Checkpoint
+                        if vlm < pocket_loss:
+                            pocket_loss = vlm
+                            saver.save(sess, FLAGS.output_dir + '/model.ckpt')
+                            print('Epoch {}, (Model saved with loss {})'.format(epoch, vlm))
+
+                    sess.run([optimizer])
 
         except tf.errors.OutOfRangeError:
             print('Done training -- epoch limit reached')
@@ -385,6 +386,7 @@ class HolEInferenceData(HolEData):
         # TODO: this won't scale up to large datasets
         self.true_triples = defaultdict(lambda: defaultdict(set))
         self.test_triples = defaultdict(lambda: defaultdict(set))
+        self.infer_tails = defaultdict(lambda: defaultdict(set))
         super(HolEInferenceData, self).__init__()
 
 
@@ -394,8 +396,12 @@ def init_inference_data():
     train_triples = os.path.join(FLAGS.data_dir, 'triples.txt')
     valid_triples = os.path.join(FLAGS.data_dir, 'triples-valid.txt')
     test_triples = os.path.join(FLAGS.data_dir, 'test_positive_triples.txt')
+    skills = os.path.join(FLAGS.data_dir, 'skills.txt')
 
     data = HolEInferenceData()
+
+    with open(skills, 'r') as f:
+        skill_names = set([s for s in f])
 
     with open(entity_file, 'r') as f:
         next(f)  # skip header
@@ -405,6 +411,8 @@ def init_inference_data():
             index = int(index)
             data.type_to_ids[entity_type].append(index)
             data.id_to_metadata[index] = entity_id + ' ' + name
+            if name in skill_names:
+                data.infer_tails['S'].put(index)
 
     data.relation_count = sum(1 for line in open(relation_file))
 
@@ -445,6 +453,7 @@ def eval_link_prediction(scores, id_to_metadata, true_triples, test_triples, raw
 
     raw_rank = 0
     filtered_rank = 0
+
     while heap:
         pair = heappop(heap)
         loss = pair[0]
@@ -458,6 +467,10 @@ def eval_link_prediction(scores, id_to_metadata, true_triples, test_triples, raw
             continue
 
         filtered_rank += 1
+
+        with open('inference_results.tsv', 'a') as output:
+            output.write('{}\t{}\t{}\t{}\n'.format(loss, head_id, tail_id, relation_id))
+
         if tail_id in test_triples[head_id][relation_id]:
             raw_positions.append(raw_rank)
             filtered_positions.append(filtered_rank)
@@ -467,15 +480,38 @@ def eval_link_prediction(scores, id_to_metadata, true_triples, test_triples, raw
             print '\tGUESS {}: {}\thttps://diffbot.com/entity/{}'.format(filtered_rank, loss, id_to_metadata[tail_id])
 
 
+def score_mrr(raw_positions, filtered_positions):
+    # TODO: push these calculations into the graph, refactor for use in training validation
+    raw_positions = np.array(raw_positions)
+    raw_mrr = np.mean(1.0 / raw_positions)
+    mean_raw_pos = np.mean(raw_positions)
+
+    filtered_positions = np.array(filtered_positions)
+    filtered_mrr = np.mean(1.0 / filtered_positions)
+    mean_filtered_pos = np.mean(filtered_positions)
+
+    hits1 = np.mean(filtered_positions <= 1).sum() * 100
+    hits3 = np.mean(filtered_positions <= 3).sum() * 100
+    hits10 = np.mean(filtered_positions <= 10).sum() * 100
+    print '\n\n\nRaw MRR: {} (mean position: {})'.format(raw_mrr, mean_raw_pos)
+    print 'Filtered MRR: {} (mean position: {})'.format(filtered_mrr, mean_filtered_pos)
+    print 'Hits at 1: {}, 3: {}, 10: {}'.format(hits1, hits3, hits10)
+
+
 def infer_triples():
     data = init_inference_data()
 
-    # TODO: learn tail_types for each relation
-    relation_ids = [10, 13]
-    tail_type = 'A'
+    # TODO: get candidate tail type from training triples
 
-    candidate_tails = data.type_to_ids[tail_type] if FLAGS.infer_typesafe else \
-        range(data.relation_count, data.entity_count)
+    skill_ids = [9]
+    candidate_skills = data.infer_tails
+    age_relation_ids = [2]
+    candidate_ages = data.type_to_ids['2']
+    current_location_ids = [10]
+    candidate_places = data.type_to_ids['A']
+    candidates = [(skill_ids, candidate_skills),
+                  (age_relation_ids, candidate_ages),
+                  (current_location_ids, candidate_places)]
 
     with tf.name_scope('inference'):
         embeddings = tf.get_variable('embeddings', [data.entity_count, FLAGS.embedding_dim],
@@ -495,37 +531,20 @@ def infer_triples():
             coord = tf.train.Coordinator()
             threads = tf.train.start_queue_runners(sess=sess, coord=coord)
             try:
-                raw_positions = []
-                filtered_positions = []
+                # raw_positions = []
+                # filtered_positions = []
 
                 for head in data.test_triples:
-                    for relation in data.test_triples[head]:
-                        if FLAGS.infer_typesafe and relation not in relation_ids:
-                            continue
-
-                        candidate_triples = np.array(list(itertools.product([head], candidate_tails, [relation])))
-                        feed_dict = {triple_batch: candidate_triples}
+                    for candidate in candidates:
+                        candidate_relations = np.array(list(itertools.product([head], candidate[1], candidate[0])))
+                        feed_dict = {triple_batch: candidate_relations}
                         triples, batch_loss = sess.run([triple_batch, eval_loss], feed_dict)
 
-                        eval_link_prediction(zip(batch_loss, triples), data.id_to_metadata,
-                                             data.true_triples, data.test_triples,
-                                             raw_positions, filtered_positions)
+                        # eval_link_prediction(zip(batch_loss, triples), data.id_to_metadata,
+                        #                     data.true_triples, data.test_triples,
+                        #                     raw_positions, filtered_positions)
 
-                # TODO: push these calculations into the graph, refactor for use in training validation
-                raw_positions = np.array(raw_positions)
-                raw_mrr = np.mean(1.0 / raw_positions)
-                mean_raw_pos = np.mean(raw_positions)
-
-                filtered_positions = np.array(filtered_positions)
-                filtered_mrr = np.mean(1.0 / filtered_positions)
-                mean_filtered_pos = np.mean(filtered_positions)
-
-                hits1 = np.mean(filtered_positions <= 1).sum() * 100
-                hits3 = np.mean(filtered_positions <= 3).sum() * 100
-                hits10 = np.mean(filtered_positions <= 10).sum() * 100
-                print '\n\n\nRaw MRR: {} (mean position: {})'.format(raw_mrr, mean_raw_pos)
-                print 'Filtered MRR: {} (mean position: {})'.format(filtered_mrr, mean_filtered_pos)
-                print 'Hits at 1: {}, 3: {}, 10: {}'.format(hits1, hits3, hits10)
+                # score_mrr(raw_positions, filtered_positions)
 
             except tf.errors.OutOfRangeError:
                 print('Done evaluation -- triple limit reached')
