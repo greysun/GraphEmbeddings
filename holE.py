@@ -386,7 +386,7 @@ class HolEInferenceData(HolEData):
         # TODO: this won't scale up to large datasets
         self.true_triples = defaultdict(lambda: defaultdict(set))
         self.test_triples = defaultdict(lambda: defaultdict(set))
-        self.infer_tails = defaultdict(lambda: defaultdict(set))
+        self.infer_tails = defaultdict(set)
         super(HolEInferenceData, self).__init__()
 
 
@@ -401,7 +401,7 @@ def init_inference_data():
     data = HolEInferenceData()
 
     with open(skills, 'r') as f:
-        skill_names = set([s for s in f])
+        skill_names = set([s.strip() for s in f])
 
     with open(entity_file, 'r') as f:
         next(f)  # skip header
@@ -412,7 +412,7 @@ def init_inference_data():
             data.type_to_ids[entity_type].append(index)
             data.id_to_metadata[index] = entity_id + ' ' + name
             if name in skill_names:
-                data.infer_tails['S'].put(index)
+                data.infer_tails['S'].add(index)
 
     data.relation_count = sum(1 for line in open(relation_file))
 
@@ -454,30 +454,31 @@ def eval_link_prediction(scores, id_to_metadata, true_triples, test_triples, raw
     raw_rank = 0
     filtered_rank = 0
 
-    while heap:
-        pair = heappop(heap)
-        loss = pair[0]
-        head_id = pair[1][0]
-        tail_id = pair[1][1]
-        relation_id = pair[1][2]
+    with open('inference_results.tsv', 'a') as output:
+        while heap:
+            pair = heappop(heap)
+            loss = pair[0]
+            head_id = pair[1][0]
+            tail_id = pair[1][1]
+            relation_id = pair[1][2]
 
-        raw_rank += 1
-        if tail_id in true_triples[head_id][relation_id]:
-            print '\tTRAIN {}: {}\thttps://diffbot.com/entity/{}'.format(raw_rank, loss, id_to_metadata[tail_id])
-            continue
+            raw_rank += 1
+            if tail_id in true_triples[head_id][relation_id]:
+                print '\tTRAIN {}: {}\thttps://diffbot.com/entity/{}'.format(raw_rank, loss, id_to_metadata[tail_id])
+                continue
 
-        filtered_rank += 1
+            filtered_rank += 1
 
-        with open('inference_results.tsv', 'a') as output:
-            output.write('{}\t{}\t{}\t{}\n'.format(loss, head_id, tail_id, relation_id))
+            if filtered_rank <= 10:
+                output.write('{:.6f}\t{}\t{}\t{}\n'.format(loss, head_id, tail_id, relation_id))
 
-        if tail_id in test_triples[head_id][relation_id]:
-            raw_positions.append(raw_rank)
-            filtered_positions.append(filtered_rank)
-            print '\tMATCH {}: {}\thttps://diffbot.com/entity/{}'.format(filtered_rank, loss, id_to_metadata[tail_id])
-            continue
-        elif filtered_rank <= 3:
-            print '\tGUESS {}: {}\thttps://diffbot.com/entity/{}'.format(filtered_rank, loss, id_to_metadata[tail_id])
+            if tail_id in test_triples[head_id][relation_id]:
+                raw_positions.append(raw_rank)
+                filtered_positions.append(filtered_rank)
+                print '\tMATCH {}: {}\thttps://diffbot.com/entity/{}'.format(filtered_rank, loss, id_to_metadata[tail_id])
+                continue
+            elif filtered_rank <= 3:
+                print '\tGUESS {}: {}\thttps://diffbot.com/entity/{}'.format(filtered_rank, loss, id_to_metadata[tail_id])
 
 
 def score_mrr(raw_positions, filtered_positions):
@@ -504,7 +505,7 @@ def infer_triples():
     # TODO: get candidate tail type from training triples
 
     skill_ids = [9]
-    candidate_skills = data.infer_tails
+    candidate_skills = data.infer_tails['S']
     age_relation_ids = [2]
     candidate_ages = data.type_to_ids['2']
     current_location_ids = [10]
@@ -531,8 +532,8 @@ def infer_triples():
             coord = tf.train.Coordinator()
             threads = tf.train.start_queue_runners(sess=sess, coord=coord)
             try:
-                # raw_positions = []
-                # filtered_positions = []
+                raw_positions = []
+                filtered_positions = []
 
                 for head in data.test_triples:
                     for candidate in candidates:
@@ -540,9 +541,9 @@ def infer_triples():
                         feed_dict = {triple_batch: candidate_relations}
                         triples, batch_loss = sess.run([triple_batch, eval_loss], feed_dict)
 
-                        # eval_link_prediction(zip(batch_loss, triples), data.id_to_metadata,
-                        #                     data.true_triples, data.test_triples,
-                        #                     raw_positions, filtered_positions)
+                        eval_link_prediction(zip(batch_loss, triples), data.id_to_metadata,
+                                            data.true_triples, data.test_triples,
+                                            raw_positions, filtered_positions)
 
                 # score_mrr(raw_positions, filtered_positions)
 
@@ -556,7 +557,7 @@ def infer_triples():
 
 def main(_):
     # TODO: refactor model in to object
-    if FLAGS.infer or FLAGS.infer_typesafe:
+    if FLAGS.infer:
         infer_triples()
     else:
         training_data = init_data()
@@ -583,7 +584,6 @@ if __name__ == '__main__':
     parser.add_argument('--reader_threads', type=int, default=4, help='Number of training triple file readers.')
     parser.add_argument('--resume_checkpoint', action='store_true', help='Resume training on the checkpoint model.')
     parser.add_argument('--infer', action='store_true', help='Infer new triples from the latest checkpoint model.')
-    parser.add_argument('--infer_typesafe', action='store_true', help='Infer triples using type-safe candidates.')
 
     FLAGS, unparsed = parser.parse_known_args()
     tf.app.run(main=main, argv=[sys.argv[0]] + unparsed)
