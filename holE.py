@@ -462,7 +462,7 @@ def eval_link_prediction(scores, id_to_metadata, true_triples, test_triples, raw
             tail_id = pair[1][1]
             relation_id = pair[1][2]
 
-            if filtered_rank < 10:
+            if filtered_rank < 5:
                 output.write('{:.6f}\t{}\t{}\t{}\n'.format(loss, head_id, tail_id, relation_id))
 
             raw_rank += 1
