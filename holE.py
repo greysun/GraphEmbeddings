@@ -462,15 +462,15 @@ def eval_link_prediction(scores, id_to_metadata, true_triples, test_triples, raw
             tail_id = pair[1][1]
             relation_id = pair[1][2]
 
+            if filtered_rank < 10:
+                output.write('{:.6f}\t{}\t{}\t{}\n'.format(loss, head_id, tail_id, relation_id))
+
             raw_rank += 1
             if tail_id in true_triples[head_id][relation_id]:
                 print '\tTRAIN {}: {}\thttps://diffbot.com/entity/{}'.format(raw_rank, loss, id_to_metadata[tail_id])
                 continue
 
             filtered_rank += 1
-
-            if filtered_rank <= 10:
-                output.write('{:.6f}\t{}\t{}\t{}\n'.format(loss, head_id, tail_id, relation_id))
 
             if tail_id in test_triples[head_id][relation_id]:
                 raw_positions.append(raw_rank)
