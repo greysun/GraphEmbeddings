@@ -442,8 +442,10 @@ def init_inference_data():
 
 def eval_link_prediction(scores, id_to_metadata, true_triples, test_triples, raw_positions, filtered_positions):
     heap = []
+    min_loss = 100
     for pair in scores:
         loss = pair[0][0]
+        min_loss = min(min_loss, loss)
         heappush(heap, (loss, tuple(pair[1])))
         person_id = id_to_metadata[pair[1][0]]
         relation = id_to_metadata[pair[1][2]]
@@ -462,7 +464,7 @@ def eval_link_prediction(scores, id_to_metadata, true_triples, test_triples, raw
             tail_id = pair[1][1]
             relation_id = pair[1][2]
 
-            if filtered_rank < 5:
+            if filtered_rank < 11 and min_loss < FLAGS.infer_threshold:
                 output.write('{:.6f}\t{}\t{}\t{}\n'.format(loss, head_id, tail_id, relation_id))
 
             raw_rank += 1
@@ -581,6 +583,7 @@ if __name__ == '__main__':
     parser.add_argument('--reader_threads', type=int, default=4, help='Number of training triple file readers.')
     parser.add_argument('--resume_checkpoint', action='store_true', help='Resume training on the checkpoint model.')
     parser.add_argument('--infer', action='store_true', help='Infer new triples from the latest checkpoint model.')
+    parser.add_argument('--infer_threshold', type=float, default=0.1, help='Max loss to save triples')
 
     FLAGS, unparsed = parser.parse_known_args()
     tf.app.run(main=main, argv=[sys.argv[0]] + unparsed)
