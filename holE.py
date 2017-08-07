@@ -504,15 +504,12 @@ def infer_triples():
 
     # TODO: get candidate tail type from training triples
 
-    skill_ids = [9]
     candidate_skills = data.infer_tails['S']
-    age_relation_ids = [2]
     candidate_ages = data.type_to_ids['2']
-    current_location_ids = [10]
-    candidate_places = data.type_to_ids['A']
-    candidates = [(skill_ids, candidate_skills),
-                  (age_relation_ids, candidate_ages),
-                  (current_location_ids, candidate_places)]
+    candidate_genders = data.type_to_ids['1']
+    candidates = [([9], candidate_skills),
+                  ([2], candidate_ages),
+                  ([1], candidate_genders)]
 
     with tf.name_scope('inference'):
         embeddings = tf.get_variable('embeddings', [data.entity_count, FLAGS.embedding_dim],
