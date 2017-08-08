@@ -481,7 +481,7 @@ def eval_link_prediction(scores, id_to_metadata, true_triples, test_triples, max
                 filtered_positions.append(filtered_rank)
                 print '\tMATCH {}: {}\thttps://diffbot.com/entity/{}'.format(filtered_rank, loss, id_to_metadata[tail_id])
                 continue
-            elif filtered_rank <= 3:
+            elif filtered_rank <= 3 and min_loss < FLAGS.infer_threshold:
                 print '\tGUESS {}: {}\thttps://diffbot.com/entity/{}'.format(filtered_rank, loss, id_to_metadata[tail_id])
 
 
