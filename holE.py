@@ -519,7 +519,7 @@ def infer_triples():
                   InferenceCandidates([1], data.type_to_ids['1'], 2),  # Gender
                   InferenceCandidates([2], data.type_to_ids['2'], 3),  # Age
                   InferenceCandidates([6], data.type_to_ids['R'], 5),  # Role
-                  InferenceCandidates([9], data.type_to_ids['S'], 10, FLAGS.inference_threshold * 2),  # Skill
+                  InferenceCandidates([9], data.type_to_ids['S'], 10, FLAGS.infer_threshold * 2),  # Skill
                   InferenceCandidates([10, 11, 12, 13, 14], data.type_to_ids['A'], 3)  # Location
                   ]
 
