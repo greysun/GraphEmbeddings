@@ -441,7 +441,8 @@ def init_inference_data():
     return data
 
 
-def eval_link_prediction(scores, id_to_metadata, true_triples, test_triples, raw_positions, filtered_positions):
+def eval_link_prediction(scores, id_to_metadata, true_triples, test_triples, max_triples,
+                         raw_positions, filtered_positions):
     heap = []
     min_loss = 100
     for pair in scores:
@@ -465,7 +466,7 @@ def eval_link_prediction(scores, id_to_metadata, true_triples, test_triples, raw
             tail_id = pair[1][1]
             relation_id = pair[1][2]
 
-            if filtered_rank < 11 and min_loss < FLAGS.infer_threshold:
+            if filtered_rank < max_triples and min_loss < FLAGS.infer_threshold:
                 output.write('{:.6f}\t{}\t{}\t{}\n'.format(loss, head_id, tail_id, relation_id))
 
             raw_rank += 1
@@ -552,10 +553,10 @@ def infer_triples():
                         triples, batch_loss = sess.run([triple_batch, eval_loss], feed_dict)
 
                         eval_link_prediction(zip(batch_loss, triples), data.id_to_metadata,
-                                             data.true_triples, data.test_triples,
+                                             data.true_triples, data.test_triples, candidate.max_triples,
                                              raw_positions, filtered_positions)
 
-                # score_mrr(raw_positions, filtered_positions)
+                score_mrr(raw_positions, filtered_positions)
 
             except tf.errors.OutOfRangeError:
                 print('Done evaluation -- triple limit reached')
