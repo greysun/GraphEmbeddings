@@ -340,6 +340,7 @@ def run_training(data):
                 projector.visualize_embeddings(summary_writer, projector_config)
 
                 # Shuffle the available corrupt entity ids and insert every epoch
+                # TODO: only use entities with metadata column isTail=true
                 print 'Resampling type_to_id table...'
                 padded_values = np.array([[random.choice(v) for _ in range(FLAGS.padded_size)]
                                           for v in data.type_to_ids.values()])
@@ -505,13 +506,14 @@ def infer_triples():
     data = init_inference_data()
 
     # TODO: get candidate tail type from training triples
-
-    candidate_skills = data.infer_tails['S']
-    candidate_ages = data.type_to_ids['2']
-    candidate_genders = data.type_to_ids['1']
-    candidates = [([9], candidate_skills),
-                  ([2], candidate_ages),
-                  ([1], candidate_genders)]
+    candidate_heads = data.infer_tails['P']
+    candidates = [
+                  ([1], data.type_to_ids['1']),
+                  ([2], data.type_to_ids['2']),
+                  ([6], data.type_to_ids['R']),
+                  ([9], data.type_to_ids['S']),
+                  ([10], data.type_to_ids['A'])
+                  ]
 
     with tf.name_scope('inference'):
         embeddings = tf.get_variable('embeddings', [data.entity_count, FLAGS.embedding_dim],
@@ -534,15 +536,15 @@ def infer_triples():
                 raw_positions = []
                 filtered_positions = []
 
-                for head in data.test_triples:
+                for head in candidate_heads:
                     for candidate in candidates:
                         candidate_relations = np.array(list(itertools.product([head], candidate[1], candidate[0])))
                         feed_dict = {triple_batch: candidate_relations}
                         triples, batch_loss = sess.run([triple_batch, eval_loss], feed_dict)
 
                         eval_link_prediction(zip(batch_loss, triples), data.id_to_metadata,
-                                            data.true_triples, data.test_triples,
-                                            raw_positions, filtered_positions)
+                                             data.true_triples, data.test_triples,
+                                             raw_positions, filtered_positions)
 
                 # score_mrr(raw_positions, filtered_positions)
 
