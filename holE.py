@@ -503,7 +503,7 @@ def score_mrr(raw_positions, filtered_positions):
 
 
 class InferenceCandidates(object):
-    def __init__(self, relations, tail_candidates, max_triples, min_confidence=FLAGS.infer_threshold):
+    def __init__(self, relations, tail_candidates, max_triples, min_confidence):
         self.relations = relations
         self.tail_candidates = tail_candidates
         self.max_triples = max_triples
@@ -516,11 +516,11 @@ def infer_triples():
     # TODO: get candidate tail type from training triples
     candidate_heads = data.type_to_ids['P']
     candidates = [
-                  InferenceCandidates([1], data.type_to_ids['1'], 2),  # Gender
-                  InferenceCandidates([2], data.type_to_ids['2'], 3),  # Age
-                  InferenceCandidates([6], data.type_to_ids['R'], 5),  # Role
-                  InferenceCandidates([9], data.type_to_ids['S'], 10, FLAGS.infer_threshold * 2),  # Skill
-                  InferenceCandidates([10, 11, 12, 13, 14], data.type_to_ids['A'], 3)  # Location
+                  InferenceCandidates([1], data.type_to_ids['1'], 2, FLAGS.infer_threshold),  # Gender
+                  InferenceCandidates([2], data.type_to_ids['2'], 3, FLAGS.infer_threshold),  # Age
+                  InferenceCandidates([6], data.type_to_ids['R'], 5, FLAGS.infer_threshold),  # Role
+                  InferenceCandidates([9], data.type_to_ids['S'], 10, 2*FLAGS.infer_threshold),  # Skill
+                  InferenceCandidates([10, 11, 12, 13, 14], data.type_to_ids['A'], 3, FLAGS.infer_threshold)  # Location
                   ]
 
     with tf.name_scope('inference'):
