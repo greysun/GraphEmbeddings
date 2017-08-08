@@ -506,7 +506,7 @@ def infer_triples():
     data = init_inference_data()
 
     # TODO: get candidate tail type from training triples
-    candidate_heads = data.infer_tails['P']
+    candidate_heads = data.type_to_ids['P']
     candidates = [
                   ([1], data.type_to_ids['1']),
                   ([2], data.type_to_ids['2']),
@@ -585,7 +585,7 @@ if __name__ == '__main__':
     parser.add_argument('--reader_threads', type=int, default=4, help='Number of training triple file readers.')
     parser.add_argument('--resume_checkpoint', action='store_true', help='Resume training on the checkpoint model.')
     parser.add_argument('--infer', action='store_true', help='Infer new triples from the latest checkpoint model.')
-    parser.add_argument('--infer_threshold', type=float, default=0.1, help='Max loss to save triples')
+    parser.add_argument('--infer_threshold', type=float, default=0.075, help='Max loss to save triples')
 
     FLAGS, unparsed = parser.parse_known_args()
     tf.app.run(main=main, argv=[sys.argv[0]] + unparsed)
