@@ -380,7 +380,6 @@ class HolEInferenceData(HolEData):
         # TODO: this won't scale up to large datasets
         self.true_triples = defaultdict(lambda: defaultdict(set))
         self.test_triples = defaultdict(lambda: defaultdict(set))
-        self.infer_tails = defaultdict(set)
         super(HolEInferenceData, self).__init__()
 
 
@@ -390,12 +389,8 @@ def init_inference_data():
     train_triples = os.path.join(FLAGS.data_dir, 'triples.txt')
     valid_triples = os.path.join(FLAGS.data_dir, 'triples-valid.txt')
     test_triples = os.path.join(FLAGS.data_dir, 'test_positive_triples.txt')
-    skills = os.path.join(FLAGS.data_dir, 'skills.txt')
 
     data = HolEInferenceData()
-
-    with open(skills, 'r') as f:
-        skill_names = set([s.strip() for s in f])
 
     with open(entity_file, 'r') as f:
         next(f)  # skip header
@@ -405,8 +400,6 @@ def init_inference_data():
             index = int(index)
             data.type_to_ids[entity_type].append(index)
             data.id_to_metadata[index] = entity_id + ' ' + name
-            if name in skill_names:
-                data.infer_tails['S'].add(index)
 
     data.relation_count = sum(1 for line in open(relation_file))
 
