@@ -503,11 +503,11 @@ def score_mrr(raw_positions, filtered_positions):
 
 
 class InferenceCandidates(object):
-    def __init__(self, relations, tail_candidates, max_triples):
+    def __init__(self, relations, tail_candidates, max_triples, min_confidence=FLAGS.infer_threshold):
         self.relations = relations
         self.tail_candidates = tail_candidates
         self.max_triples = max_triples
-        self.min_confidence = FLAGS.infer_threshold
+        self.min_confidence = min_confidence
 
 
 def infer_triples():
@@ -519,7 +519,7 @@ def infer_triples():
                   InferenceCandidates([1], data.type_to_ids['1'], 2),  # Gender
                   InferenceCandidates([2], data.type_to_ids['2'], 3),  # Age
                   InferenceCandidates([6], data.type_to_ids['R'], 5),  # Role
-                  InferenceCandidates([9], data.type_to_ids['S'], 10),  # Skill
+                  InferenceCandidates([9], data.type_to_ids['S'], 10, FLAGS.inference_threshold * 2),  # Skill
                   InferenceCandidates([10, 11, 12, 13, 14], data.type_to_ids['A'], 3)  # Location
                   ]
 
@@ -594,7 +594,7 @@ if __name__ == '__main__':
     parser.add_argument('--reader_threads', type=int, default=4, help='Number of training triple file readers.')
     parser.add_argument('--resume_checkpoint', action='store_true', help='Resume training on the checkpoint model.')
     parser.add_argument('--infer', action='store_true', help='Infer new triples from the latest checkpoint model.')
-    parser.add_argument('--infer_threshold', type=float, default=0.075, help='Max loss to save triples')
+    parser.add_argument('--infer_threshold', type=float, default=0.05, help='Max loss to save triples')
 
     FLAGS, unparsed = parser.parse_known_args()
     tf.app.run(main=main, argv=[sys.argv[0]] + unparsed)
