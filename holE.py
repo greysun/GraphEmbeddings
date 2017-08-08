@@ -339,26 +339,19 @@ def run_training(data):
                 embeddings_config.tensor_name = embeddings.name
                 projector.visualize_embeddings(summary_writer, projector_config)
 
-                # Shuffle the available corrupt entity ids and insert every epoch
-                # TODO: only use entities with metadata column isTail=true
-                print 'Resampling type_to_id table...'
-                padded_values = np.array([[random.choice(v) for _ in range(FLAGS.padded_size)]
-                                          for v in data.type_to_ids.values()])
-                feed_dict = {type_to_ids_keys: np.array(data.type_to_ids.keys()),
-                             type_to_ids_values: np.array(padded_values)}
-                sess.run([type_to_ids_insert], feed_dict)
-
                 print 'Training epoch {}...'.format(epoch)
                 for batch in range(1, batch_count):
+                    # Shuffle the available corrupt entity ids every batch
+                    # TODO: only use entities with metadata column isTail=true
+                    padded_values = np.array([[random.choice(v) for _ in range(FLAGS.padded_size)]
+                                              for v in data.type_to_ids.values()])
+                    feed_dict = {type_to_ids_keys: np.array(data.type_to_ids.keys()),
+                                 type_to_ids_values: np.array(padded_values)}
+                    sess.run([type_to_ids_insert], feed_dict)
+
                     # Run validation and log to summary_writer
                     # TODO: this should run the entire validation set
                     if batch % (batch_count / 16) == 0:
-                        padded_values = np.array([[random.choice(v) for _ in range(FLAGS.padded_size)]
-                                                  for v in data.type_to_ids.values()])
-                        feed_dict = {type_to_ids_keys: np.array(data.type_to_ids.keys()),
-                                     type_to_ids_values: np.array(padded_values)}
-                        sess.run([type_to_ids_insert], feed_dict)
-
                         vlm, summary = sess.run([valid_loss_mean, summaries])
                         step = (epoch - 1) * batch_count + batch
                         summary_writer.add_summary(summary, step)
@@ -589,7 +582,7 @@ if __name__ == '__main__':
     parser.add_argument('--log_loss', action='store_true', help='Use logistic loss istead of pairwise ranking loss.')
     parser.add_argument('--negative_ratio', type=int, default=1, help='Number of negative labels sampled in log_loss.')
     parser.add_argument('--margin', type=float, default=0.2, help='Hinge loss margin.')
-    parser.add_argument('--padded_size', type=int, default=100000,
+    parser.add_argument('--padded_size', type=int, default=1024,
                         help='The maximum number of entities to use for each type while sampling corrupt triples.')
     parser.add_argument('--output_dir', type=str, default='holE-latest', help='Tensorboard Summary directory.')
     parser.add_argument('--data_dir', type=str, default='diffbot_data/kg_0.01-20170731', help='Input data directory.')
