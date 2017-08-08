@@ -452,8 +452,9 @@ def eval_link_prediction(scores, id_to_metadata, true_triples, test_triples, max
         person_id = id_to_metadata[pair[1][0]]
         relation = id_to_metadata[pair[1][2]]
 
-    # TODO: adapt format for Diffbot/FB15k
-    print 'https://diffbot.com/entity/' + person_id, relation
+    is_confident = min_loss < FLAGS.infer_threshold
+    if is_confident:
+        print 'https://diffbot.com/entity/' + person_id, relation
 
     raw_rank = 0
     filtered_rank = 0
@@ -466,22 +467,22 @@ def eval_link_prediction(scores, id_to_metadata, true_triples, test_triples, max
             tail_id = pair[1][1]
             relation_id = pair[1][2]
 
-            if filtered_rank < max_triples and min_loss < FLAGS.infer_threshold:
-                output.write('{:.6f}\t{}\t{}\t{}\n'.format(loss, head_id, tail_id, relation_id))
-
             raw_rank += 1
-            if tail_id in true_triples[head_id][relation_id]:
+            in_sample = tail_id in true_triples[head_id][relation_id]
+            if is_confident and filtered_rank < max_triples:
+                output.write('{:.6f}\t{}\t{}\t{}\t{}\n'.format(loss, head_id, tail_id, relation_id, in_sample))
+
+            if is_confident and in_sample:
                 print '\tTRAIN {}: {}\thttps://diffbot.com/entity/{}'.format(raw_rank, loss, id_to_metadata[tail_id])
                 continue
 
             filtered_rank += 1
-
-            if tail_id in test_triples[head_id][relation_id]:
+            if is_confident and tail_id in test_triples[head_id][relation_id]:
                 raw_positions.append(raw_rank)
                 filtered_positions.append(filtered_rank)
                 print '\tMATCH {}: {}\thttps://diffbot.com/entity/{}'.format(filtered_rank, loss, id_to_metadata[tail_id])
                 continue
-            elif filtered_rank <= 3 and min_loss < FLAGS.infer_threshold:
+            elif is_confident and filtered_rank <= 3:
                 print '\tGUESS {}: {}\thttps://diffbot.com/entity/{}'.format(filtered_rank, loss, id_to_metadata[tail_id])
 
 
