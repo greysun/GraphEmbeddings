@@ -502,17 +502,25 @@ def score_mrr(raw_positions, filtered_positions):
     print 'Hits at 1: {}, 3: {}, 10: {}'.format(hits1, hits3, hits10)
 
 
+class InferenceCandidates(object):
+    def __init__(self, relations, tail_candidates, max_triples):
+        self.relations = relations
+        self.tail_candidates = tail_candidates
+        self.max_triples = max_triples
+        self.min_confidence = FLAGS.infer_threshold
+
+
 def infer_triples():
     data = init_inference_data()
 
     # TODO: get candidate tail type from training triples
     candidate_heads = data.type_to_ids['P']
     candidates = [
-                  ([1], data.type_to_ids['1']),
-                  ([2], data.type_to_ids['2']),
-                  ([6], data.type_to_ids['R']),
-                  ([9], data.type_to_ids['S']),
-                  ([10], data.type_to_ids['A'])
+                  InferenceCandidates([1], data.type_to_ids['1'], 2),  # Gender
+                  InferenceCandidates([2], data.type_to_ids['2'], 3),  # Age
+                  InferenceCandidates([6], data.type_to_ids['R'], 5),  # Role
+                  InferenceCandidates([9], data.type_to_ids['S'], 10),  # Skill
+                  InferenceCandidates([10, 11, 12, 13, 14], data.type_to_ids['A'], 3)  # Location
                   ]
 
     with tf.name_scope('inference'):
@@ -538,7 +546,8 @@ def infer_triples():
 
                 for head in candidate_heads:
                     for candidate in candidates:
-                        candidate_relations = np.array(list(itertools.product([head], candidate[1], candidate[0])))
+                        candidate_relations = np.array(list(itertools.product([head], candidate.tail_candidates,
+                                                                              candidate.relations)))
                         feed_dict = {triple_batch: candidate_relations}
                         triples, batch_loss = sess.run([triple_batch, eval_loss], feed_dict)
 
