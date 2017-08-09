@@ -135,7 +135,7 @@ def corrupt_tails(type_to_ids, id_to_type, triples):
 
 
 def corrupt_entities(type_to_ids, id_to_type, triples):
-    should_corrupt_heads = tf.less(tf.random_uniform([], 0, 1.0), 0.5, 'should_corrupt_heads')
+    should_corrupt_heads = tf.less(tf.random_uniform([], 0, 1.0), 0.33, 'should_corrupt_heads')
     return tf.cond(should_corrupt_heads,
                    lambda: corrupt_heads(type_to_ids, id_to_type, triples),
                    lambda: corrupt_tails(type_to_ids, id_to_type, triples))
@@ -152,7 +152,7 @@ def corrupt_relations(relation_count, triples):
 
 def corrupt_batch(type_to_ids, id_to_type, relation_count, triples):
     # TODO: consider corrupting more entities as training time increases
-    should_corrupt_relations = tf.less(tf.random_uniform([], 0, 1.0), 0.5, 'should_corrupt_relations')
+    should_corrupt_relations = tf.less(tf.random_uniform([], 0, 1.0), 0.2, 'should_corrupt_relations')
     return tf.cond(should_corrupt_relations,
                    lambda: corrupt_relations(relation_count, triples),
                    lambda: corrupt_entities(type_to_ids, id_to_type, triples))
