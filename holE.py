@@ -59,8 +59,7 @@ def init_data():
             data.entity_count += 1
             index, diffbot_id, name, diffbot_type, mentions, is_tail = line.strip().split('\t')
             index = int(index)
-            if is_tail == "true":
-                data.type_to_ids[diffbot_type].append(index)
+            data.type_to_ids[diffbot_type].append(index)
             data.id_to_type[index] = diffbot_type
 
     print 'Entities: ', data.entity_count - data.relation_count, 'Relations: ', data.relation_count, \
@@ -576,7 +575,7 @@ if __name__ == '__main__':
     parser.add_argument('--log_loss', action='store_true', help='Use logistic loss istead of pairwise ranking loss.')
     parser.add_argument('--negative_ratio', type=int, default=1, help='Number of negative labels sampled in log_loss.')
     parser.add_argument('--margin', type=float, default=0.2, help='Hinge loss margin.')
-    parser.add_argument('--padded_size', type=int, default=1024,
+    parser.add_argument('--padded_size', type=int, default=512,
                         help='The maximum number of entities to use for each type while sampling corrupt triples.')
     parser.add_argument('--output_dir', type=str, default='holE-latest', help='Tensorboard Summary directory.')
     parser.add_argument('--data_dir', type=str, default='diffbot_data/kg_0.01-20170731', help='Input data directory.')
