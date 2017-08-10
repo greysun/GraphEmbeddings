@@ -57,9 +57,10 @@ def init_data():
         next(f)  # skip header
         for line in f:
             data.entity_count += 1
-            index, diffbot_id, name, diffbot_type = line.strip().split('\t')
+            index, diffbot_id, name, diffbot_type, mentions, is_tail = line.strip().split('\t')
             index = int(index)
-            data.type_to_ids[diffbot_type].append(index)
+            if is_tail == "true":
+                data.type_to_ids[diffbot_type].append(index)
             data.id_to_type[index] = diffbot_type
 
     print 'Entities: ', data.entity_count - data.relation_count, 'Relations: ', data.relation_count, \
