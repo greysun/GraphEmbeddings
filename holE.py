@@ -398,7 +398,7 @@ def init_inference_data():
             data.entity_count += 1
             index, diffbot_id, name, diffbot_type, mentions, is_tail = line.strip().split('\t')
             index = int(index)
-            if "true" == is_tail:
+            if "true" == is_tail or diffbot_id.startsWith('P'):
                 data.type_to_ids[diffbot_type].append(index)
             data.id_to_metadata[index] = diffbot_type + ' ' + name
 
@@ -509,7 +509,7 @@ def infer_triples():
                   InferenceCandidates([2], data.type_to_ids['2'], 3, FLAGS.infer_threshold),  # Age
                   InferenceCandidates([6], data.type_to_ids['R'], 5, FLAGS.infer_threshold),  # Role
                   InferenceCandidates([9], data.type_to_ids['S'], 10, 2*FLAGS.infer_threshold),  # Skill
-                  InferenceCandidates([10, 11, 12, 13, 14], data.type_to_ids['A'], 3, FLAGS.infer_threshold)  # Location
+                  InferenceCandidates([12, 13, 14, 15, 16], data.type_to_ids['A'], 3, FLAGS.infer_threshold)  # Location
                   ]
 
     with tf.name_scope('inference'):
