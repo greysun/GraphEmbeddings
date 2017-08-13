@@ -396,10 +396,11 @@ def init_inference_data():
         next(f)  # skip header
         for line in f:
             data.entity_count += 1
-            index, entity_id, name, entity_type = line.strip().split('\t')
+            index, diffbot_id, name, diffbot_type, mentions, is_tail = line.strip().split('\t')
             index = int(index)
-            data.type_to_ids[entity_type].append(index)
-            data.id_to_metadata[index] = entity_id + ' ' + name
+            if "true" == is_tail:
+                data.type_to_ids[diffbot_type].append(index)
+            data.id_to_metadata[index] = diffbot_type + ' ' + name
 
     data.relation_count = sum(1 for line in open(relation_file))
 
