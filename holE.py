@@ -400,7 +400,7 @@ def init_inference_data():
             index = int(index)
             if "true" == is_tail or diffbot_id.startswith('P'):
                 data.type_to_ids[diffbot_type].append(index)
-            data.id_to_metadata[index] = diffbot_type + ' ' + name
+            data.id_to_metadata[index] = diffbot_id + ' ' + name
 
     data.relation_count = sum(1 for line in open(relation_file))
 
