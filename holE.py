@@ -398,7 +398,7 @@ def init_inference_data():
             data.entity_count += 1
             index, diffbot_id, name, diffbot_type, mentions, is_tail = line.strip().split('\t')
             index = int(index)
-            if "true" == is_tail or diffbot_id.startsWith('P'):
+            if "true" == is_tail or diffbot_id.startswith('P'):
                 data.type_to_ids[diffbot_type].append(index)
             data.id_to_metadata[index] = diffbot_type + ' ' + name
 
