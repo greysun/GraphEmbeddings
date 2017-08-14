@@ -352,8 +352,7 @@ def run_training(data):
                     # Run validation and log to summary_writer
                     # TODO: this should run the entire validation set
                     if batch % (batch_count / 16) == 0:
-                        vlm, summary = sess.run([valid_loss_mean, summaries])
-                        step = (epoch - 1) * batch_count + batch
+                        vlm, summary, step = sess.run([valid_loss_mean, summaries, global_step])
                         summary_writer.add_summary(summary, step)
                         print '\tStep {} Validation Loss: {}...'.format(step, vlm)
 
