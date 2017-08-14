@@ -300,8 +300,8 @@ def run_training(data):
 
     # Validation
     with tf.name_scope('validation'):
-        valid = tf.train.shuffle_batch([data.validation_triples], 16 * FLAGS.batch_size,
-                                       capacity=2*16*FLAGS.batch_size, min_after_dequeue=16*FLAGS.batch_size,
+        valid = tf.train.shuffle_batch([data.validation_triples], FLAGS.batch_size,
+                                       capacity=2*FLAGS.batch_size, min_after_dequeue=FLAGS.batch_size,
                                        allow_smaller_final_batch=False, name='shuffle_batch')
         valid_loss = evaluate_batch(valid, embeddings, type_to_ids_table, id_to_type_table, data.relation_count)
         valid_loss_mean = tf.reduce_mean(valid_loss)
