@@ -255,7 +255,7 @@ def run_training(data):
 
     # Warning: this will clobber existing summaries
     if not FLAGS.resume_checkpoint and os.path.isdir(FLAGS.output_dir):
-        shutil.rmtree(FLAGS.output_dir)
+        raise Exception("WARNING: " + FLAGS.output_dir + " already exists!")
     try:
         os.makedirs(FLAGS.output_dir)
     except OSError as e:
