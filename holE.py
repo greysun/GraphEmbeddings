@@ -576,8 +576,8 @@ if __name__ == '__main__':
     parser.add_argument('--margin', type=float, default=0.2, help='Hinge loss margin.')
     parser.add_argument('--padded_size', type=int, default=512,
                         help='The maximum number of entities to use for each type while sampling corrupt triples.')
-    parser.add_argument('--output_dir', type=str, default='holE-latest', help='Tensorboard Summary directory.')
-    parser.add_argument('--data_dir', type=str, default='diffbot_data/kg_0.01-20170731', help='Input data directory.')
+    parser.add_argument('--output_dir', type=str, required=True, help='Tensorboard Summary directory.')
+    parser.add_argument('--data_dir', type=str, required=True, help='Input data directory.')
     parser.add_argument('--reader_threads', type=int, default=4, help='Number of training triple file readers.')
     parser.add_argument('--resume_checkpoint', action='store_true', help='Resume training on the checkpoint model.')
     parser.add_argument('--infer', action='store_true', help='Infer new triples from the latest checkpoint model.')
