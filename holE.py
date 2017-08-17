@@ -10,7 +10,6 @@ import errno
 import itertools
 import os
 import random
-import shutil
 import sys
 from heapq import heappush, heappop
 
@@ -135,7 +134,7 @@ def corrupt_tails(type_to_ids, id_to_type, triples):
 
 
 def corrupt_entities(type_to_ids, id_to_type, triples):
-    should_corrupt_heads = tf.less(tf.random_uniform([], 0, 1.0), 0.33, 'should_corrupt_heads')
+    should_corrupt_heads = tf.less(tf.random_uniform([], 0, 1.0), 0.5, 'should_corrupt_heads')
     return tf.cond(should_corrupt_heads,
                    lambda: corrupt_heads(type_to_ids, id_to_type, triples),
                    lambda: corrupt_tails(type_to_ids, id_to_type, triples))
@@ -186,6 +185,7 @@ def evaluate_triples(triple_batch, embeddings, label=None):
 
     # Compute loss
     with tf.name_scope('eval'):
+        # TODO: soft-regularization (instead of max_norm=1)
         if FLAGS.cpu:
             # TransE
             score = head_embeddings + relation_embeddings - tail_embeddings
@@ -195,7 +195,6 @@ def evaluate_triples(triple_batch, embeddings, label=None):
         if FLAGS.log_loss and label:
             score = tf.scalar_mul(-label, score)
             loss = tf.log(1. + tf.exp(score))
-            # TODO: regularization
         else:
             loss = reduce_eval(score)
 
@@ -205,7 +204,6 @@ def evaluate_triples(triple_batch, embeddings, label=None):
 
 
 def evaluate_batch(triple_batch, embeddings, type_to_ids_table, id_to_type_table, relation_count):
-    # TODO: experiment: minimize (max_train_loss), maximize (min_corrupt_loss)
     if FLAGS.log_loss:
         losses = []
         with tf.name_scope('positive'):
@@ -231,6 +229,7 @@ def evaluate_batch(triple_batch, embeddings, type_to_ids_table, id_to_type_table
             corrupt_loss = evaluate_triples(corrupt_triples, embeddings)
 
         # Score and minimize hinge-loss
+        # TODO: experiment with margin growth over time
         loss = tf.maximum(train_loss - corrupt_loss + FLAGS.margin, 0, name="loss")
         summarize(loss)
 
@@ -376,7 +375,6 @@ def run_training(data):
 class HolEInferenceData(HolEData):
     def __init__(self):
         self.id_to_metadata = dict()
-        # TODO: this won't scale up to large datasets
         self.true_triples = defaultdict(lambda: defaultdict(set))
         self.test_triples = defaultdict(lambda: defaultdict(set))
         super(HolEInferenceData, self).__init__()
