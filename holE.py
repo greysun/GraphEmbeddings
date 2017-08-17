@@ -1,9 +1,9 @@
 """
-Author: B Han
-
 Tensorflow implementation of Nickel et al, HolE, 2016
 
 See https://arxiv.org/pdf/1510.04935.pdf
+
+Author: B Han
 """
 import argparse
 import errno
@@ -458,17 +458,20 @@ def eval_link_prediction(scores, id_to_metadata, true_triples, test_triples, max
                 output.write('{:.6f}\t{}\t{}\t{}\t{}\n'.format(loss, head_id, tail_id, relation_id, in_sample))
 
             if is_confident and in_sample:
-                print '\tTRAIN {}: {}\thttps://diffbot.com/entity/{}'.format(raw_rank, loss, id_to_metadata[tail_id])
+                print '\tTRAIN {}: {}\thttps://diffbot.com/entity/{}'.format(
+                    raw_rank, loss, id_to_metadata[tail_id])
                 continue
 
             filtered_rank += 1
             if is_confident and tail_id in test_triples[head_id][relation_id]:
                 raw_positions.append(raw_rank)
                 filtered_positions.append(filtered_rank)
-                print '\tMATCH {}: {}\thttps://diffbot.com/entity/{}'.format(filtered_rank, loss, id_to_metadata[tail_id])
+                print '\tMATCH {}: {}\thttps://diffbot.com/entity/{}'.format(
+                    filtered_rank, loss, id_to_metadata[tail_id])
                 continue
             elif is_confident and filtered_rank <= 3:
-                print '\tGUESS {}: {}\thttps://diffbot.com/entity/{}'.format(filtered_rank, loss, id_to_metadata[tail_id])
+                print '\tGUESS {}: {}\thttps://diffbot.com/entity/{}'.format(
+                    filtered_rank, loss, id_to_metadata[tail_id])
 
 
 def score_mrr(raw_positions, filtered_positions):
