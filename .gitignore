@@ -1,8 +1,3 @@
-diffbot_data/kg_0.01/triples.txt
-diffbot_data/triples.txt
-diffbot_data/test_positive_triples.txt
-diffbot_data/entity_metadata.tsv
-
 .idea
 .DS_Store
 __MACOSX
