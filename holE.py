@@ -397,7 +397,8 @@ def init_inference_data():
             data.entity_count += 1
             index, diffbot_id, name, diffbot_type, mentions, is_tail = line.strip().split('\t')
             index = int(index)
-            if "true" == is_tail or diffbot_id.startswith('P'):
+            mentions = int(mentions)
+            if mentions >= FLAGS.min_mentions or diffbot_id.startswith('P'):
                 data.type_to_ids[diffbot_type].append(index)
             data.id_to_metadata[index] = diffbot_id + ' ' + name
 
@@ -583,6 +584,8 @@ if __name__ == '__main__':
     parser.add_argument('--resume_checkpoint', action='store_true', help='Resume training on the checkpoint model.')
     parser.add_argument('--infer', action='store_true', help='Infer new triples from the latest checkpoint model.')
     parser.add_argument('--infer_threshold', type=float, default=0.05, help='Max loss to save triples')
+    parser.add_argument('--min_mentions', type=int, default=10000,
+                        help='The minimum number of mentions for an entity to be a viable candidate in inference.')
 
     FLAGS, unparsed = parser.parse_known_args()
     tf.app.run(main=main, argv=[sys.argv[0]] + unparsed)
