@@ -61,11 +61,11 @@ def init_data():
             data.type_to_ids[diffbot_type].append(index)
             data.id_to_type[index] = diffbot_type
 
-    print 'Entities: ', data.entity_count - data.relation_count, 'Relations: ', data.relation_count, \
-        'Triples: ', data.triple_count
-    print 'Types: ', {k: len(v) for k, v in data.type_to_ids.iteritems()}
-    for k, v in data.type_to_ids.iteritems():
-        print '\t', k, np.random.choice(v, 10)
+    print('Entities: ', data.entity_count - data.relation_count, 'Relations: ', data.relation_count,
+          'Triples: ', data.triple_count)
+    print('Types: ', {k: len(v) for k, v in data.type_to_ids.items()})
+    for k, v in data.type_to_ids.items():
+        print('\t', k, np.random.choice(v, 10))
 
     with tf.name_scope('input'):
         # Load triples from triple_file TSV
@@ -249,8 +249,8 @@ def summarize(var):
 
 
 def run_training(data):
-    batch_count = data.triple_count / FLAGS.batch_size
-    print 'Embedding dimension: ', FLAGS.embedding_dim, 'Batch size: ', FLAGS.batch_size, 'Batch count: ', batch_count
+    batch_count = data.triple_count // FLAGS.batch_size
+    print('Embedding dimension: ', FLAGS.embedding_dim, 'Batch size: ', FLAGS.batch_size, 'Batch count: ', batch_count)
 
     # Warning: this will clobber existing summaries
     if not FLAGS.resume_checkpoint and os.path.isdir(FLAGS.output_dir):
@@ -322,9 +322,9 @@ def run_training(data):
 
         try:
             # Populate id_to_type mapping
-            print 'Populating id_to_type table...'
-            feed_dict = {id_to_type_keys: np.array(data.id_to_type.keys()),
-                         id_to_type_values: np.array(data.id_to_type.values())}
+            print('Populating id_to_type table...')
+            feed_dict = {id_to_type_keys: np.array(list(data.id_to_type.keys())),
+                         id_to_type_values: np.array(list(data.id_to_type.values()))}
             sess.run([id_to_type_insert], feed_dict)
 
             epoch = 0
@@ -332,19 +332,19 @@ def run_training(data):
             while True:
                 epoch += 1
 
-                print 'Initializing projector...'
+                print('Initializing projector...')
                 projector_config = projector.ProjectorConfig()
                 embeddings_config = projector_config.embeddings.add()
                 embeddings_config.tensor_name = embeddings.name
                 projector.visualize_embeddings(summary_writer, projector_config)
 
-                print 'Training epoch {}...'.format(epoch)
+                print('Training epoch {}...'.format(epoch))
                 for batch in range(1, batch_count):
                     # Shuffle the available corrupt entity ids every batch
                     # TODO: only use entities with metadata column isTail=true
                     padded_values = np.array([[random.choice(v) for _ in range(FLAGS.padded_size)]
                                               for v in data.type_to_ids.values()])
-                    feed_dict = {type_to_ids_keys: np.array(data.type_to_ids.keys()),
+                    feed_dict = {type_to_ids_keys: np.array(list(data.type_to_ids.keys())),
                                  type_to_ids_values: np.array(padded_values)}
                     sess.run([type_to_ids_insert], feed_dict)
 
@@ -353,7 +353,7 @@ def run_training(data):
                     if batch % (batch_count / 16) == 0:
                         vlm, summary, step = sess.run([valid_loss_mean, summaries, global_step])
                         summary_writer.add_summary(summary, step)
-                        print '\tStep {} Validation Loss: {}...'.format(step, vlm)
+                        print('\tStep {} Validation Loss: {}...'.format(step, vlm))
 
                         # Checkpoint
                         if vlm < pocket_loss:
@@ -366,7 +366,7 @@ def run_training(data):
         except tf.errors.OutOfRangeError:
             print('Done training -- epoch limit reached')
         finally:
-            print 'Stopping training...'
+            print('Stopping training...')
             coord.request_stop()
 
         coord.join(threads)
@@ -402,7 +402,7 @@ def init_inference_data():
 
     data.relation_count = sum(1 for line in open(relation_file))
 
-    print 'Types: ', {k: len(v) for k, v in data.type_to_ids.iteritems()}
+    print('Types: ', {k: len(v) for k, v in data.type_to_ids.items()})
 
     with open(test_triples, 'r') as f:
         for line in f:
@@ -439,7 +439,7 @@ def eval_link_prediction(scores, id_to_metadata, true_triples, test_triples, max
 
     is_confident = min_loss < FLAGS.infer_threshold
     if is_confident:
-        print 'https://diffbot.com/entity/' + person_id, relation
+        print('https://diffbot.com/entity/' + person_id, relation)
 
     raw_rank = 0
     filtered_rank = 0
@@ -458,20 +458,20 @@ def eval_link_prediction(scores, id_to_metadata, true_triples, test_triples, max
                 output.write('{:.6f}\t{}\t{}\t{}\t{}\n'.format(loss, head_id, tail_id, relation_id, in_sample))
 
             if is_confident and in_sample:
-                print '\tTRAIN {}: {}\thttps://diffbot.com/entity/{}'.format(
-                    raw_rank, loss, id_to_metadata[tail_id])
+                print('\tTRAIN {}: {}\thttps://diffbot.com/entity/{}'.format(
+                    raw_rank, loss, id_to_metadata[tail_id]))
                 continue
 
             filtered_rank += 1
             if is_confident and tail_id in test_triples[head_id][relation_id]:
                 raw_positions.append(raw_rank)
                 filtered_positions.append(filtered_rank)
-                print '\tMATCH {}: {}\thttps://diffbot.com/entity/{}'.format(
-                    filtered_rank, loss, id_to_metadata[tail_id])
+                print('\tMATCH {}: {}\thttps://diffbot.com/entity/{}'.format(
+                    filtered_rank, loss, id_to_metadata[tail_id]))
                 continue
             elif is_confident and filtered_rank <= 3:
-                print '\tGUESS {}: {}\thttps://diffbot.com/entity/{}'.format(
-                    filtered_rank, loss, id_to_metadata[tail_id])
+                print('\tGUESS {}: {}\thttps://diffbot.com/entity/{}'.format(
+                    filtered_rank, loss, id_to_metadata[tail_id]))
 
 
 def score_mrr(raw_positions, filtered_positions):
@@ -487,9 +487,9 @@ def score_mrr(raw_positions, filtered_positions):
     hits1 = np.mean(filtered_positions <= 1).sum() * 100
     hits3 = np.mean(filtered_positions <= 3).sum() * 100
     hits10 = np.mean(filtered_positions <= 10).sum() * 100
-    print '\n\n\nRaw MRR: {} (mean position: {})'.format(raw_mrr, mean_raw_pos)
-    print 'Filtered MRR: {} (mean position: {})'.format(filtered_mrr, mean_filtered_pos)
-    print 'Hits at 1: {}, 3: {}, 10: {}'.format(hits1, hits3, hits10)
+    print('\n\n\nRaw MRR: {} (mean position: {})'.format(raw_mrr, mean_raw_pos))
+    print('Filtered MRR: {} (mean position: {})'.format(filtered_mrr, mean_filtered_pos))
+    print('Hits at 1: {}, 3: {}, 10: {}'.format(hits1, hits3, hits10))
 
 
 class InferenceCandidates(object):
