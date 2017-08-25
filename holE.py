@@ -569,7 +569,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--cpu', action='store_true', help='Disable GPU-only operations (namely FFT/iFFT).')
     parser.add_argument('--learning_rate', type=float, default=0.1, help='Initial learning rate.')
-    parser.add_argument('--learning_decay_steps', type=float, default=16, help='Learning rate decay steps (in epochs).')
+    parser.add_argument('--learning_decay_steps', type=float, default=64, help='Learning rate decay steps (in epochs).')
     parser.add_argument('--learning_decay_rate', type=float, default=0.5, help='Learning decay rate.')
     parser.add_argument('--batch_size', type=int, default=512, help='Batch size.')
     parser.add_argument('--num_epochs', type=int, default=1000, help='Number of training epochs.')
