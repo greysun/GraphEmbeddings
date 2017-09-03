@@ -18,6 +18,8 @@ Loss is scored from a pairwise hinge-loss where negative scores are evaluated us
 
 Embeddings can used as inputs to other machine learning models or directly used to infer by scoring candidate triples. This implementation observes type-safety in both corrupt triple generation and in inference.
 
+For more information, view this ![presentation][https://docs.google.com/presentation/d/1fCfKGmkGyTmHqBWR2oGnS_muGvtZ_a1fb32lL_B5v3Q/edit?usp=sharing].
+
 ## Tensorboard Demo: Search Associated Entities
 
 Tensordboard offers a fantastic embedding visualization tool, applying T-SNE or PCA in the browser on the first 100k embeddings. Here are few snippets of the UI and some example queries using Holographic Embeddings. This experiment began 2017-08-24 and ran over 3 days on 16GB RAM and a single GPU from 2014 on 1.2 million entities and 30 million triples.
