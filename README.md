@@ -18,7 +18,7 @@ Loss is scored from a pairwise hinge-loss where negative scores are evaluated us
 
 Embeddings can used as inputs to other machine learning models or directly used to infer by scoring candidate triples. This implementation observes type-safety in both corrupt triple generation and in inference.
 
-For more information, view this ![presentation][https://docs.google.com/presentation/d/1fCfKGmkGyTmHqBWR2oGnS_muGvtZ_a1fb32lL_B5v3Q/edit?usp=sharing].
+For more information, view this [presentation](https://docs.google.com/presentation/d/1fCfKGmkGyTmHqBWR2oGnS_muGvtZ_a1fb32lL_B5v3Q/edit?usp=sharing).
 
 ## Tensorboard Demo: Search Associated Entities
 
