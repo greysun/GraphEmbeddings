@@ -66,7 +66,7 @@ T-SNE on ages yields a curve that orders all of the ages sequentially.
 
 PCA on age embeddings yields a similar curve, however one axis appears to correlate with the working population. Embedding names represent the type (2 for age) and the 3-year bucket, for example bucket 2_6 contains ages in [18,21) while bucket 2_10 contains ages [30,33). The below image indicates ages below 21 and above 66 off the plane shared by age buckets for [22, 66).
 
-![age](images/age.png)
+![age2](images/age2.png)
 
 ## Experiments
 
