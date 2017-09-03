@@ -22,7 +22,7 @@ For more information, view this [presentation](https://docs.google.com/presentat
 
 Tensordboard offers a fantastic embedding visualization tool, applying T-SNE or PCA in the browser on the first 100k embeddings. Here are few snippets of the UI and some example queries using Holographic Embeddings. This experiment began 2017-08-24 and ran over 3 days on 16GB RAM and a single GPU from 2014 on 1.2 million entities and 30 million triples.
 
-The unit ball with all available entities (first 100k limited by Tensorboard).
+The unit ball with all available (first 100k limited by Tensorboard) entities, colored by type.
 
 ![all entities](images/all.png)
 
