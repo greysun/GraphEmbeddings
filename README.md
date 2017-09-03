@@ -9,7 +9,7 @@ For example, a search from the embedding representing the entity "University of 
 
 ![berkeley](images/berkeley.png)
 
-Often the exact association corresponding to the various dimensions of the embedding are ambiguous and not clearly defined, much like the learned neurons of a neural network. However, in this case, it appears the embedding has captured some information regarding University entities (the search could have yielded other Organizations, such as Macy's or IBM) as well as geographical locations (or possibly the locations of Persons affiliated with the entity).
+Often the exact association corresponding to the various dimensions of the embedding are ambiguous and not clearly defined, much like the learned neurons of a neural network. However, in this case, it appears the embedding has captured some information regarding University entities (the search could have yielded other Organizations, such as Macy's or IBM) as well as geographical locations (all of these are schools in California).
 
 ## Approach
 Holographic Embeddings employ circular correlation, which provides a fast vector heuristic for evaluating pair-wise entity similarity. It is similar to a matrix multiplication in that every cross-term contributes to the final result, however the result is squashed into a vector, trading some resolution for both memory-efficiency and runtime performance -- each epoch roughly O(td * log(d)) where t is the number of triples and d is the embedding-dimension. In practice, d is sufficiently small that performance resembles O(n).
