@@ -104,10 +104,16 @@ HolE runs in roughly O(EN) where N is the number of triples and E the number of 
 
 While convergence time is not an issue, and optimistically won't be for billions of entities and potentially trillions of triples, filtering candidates remains an obstacle. It is not clear which candidates provide meaningful results -- often persons claim expertise in soft skill such as leadership or management, but these are not valuable bits of information, nor can they be objectively evaluated. This task is still a work in progress at this time (2017-9-3).
 
+Poincare embeddings may be fruitful in helping filter obscure candidates and select for the most top-level, general concepts. [5]
+
 ## Reference
 
-[1] Maximilian Nickel, Lorenzo Rosasco, Tomaso Poggio. (2016). Holographic Embeddings of Knowledge Graphs. AAAI 2016.
+[1] Maximilian Nickel, Lorenzo Rosasco: “Holographic Embeddings of Knowledge Graphs”, 2015; [http://arxiv.org/abs/1510.04935 arXiv:1510.04935].
 
-[2] Hayashi, Katsuhiko & Shimbo, Masashi. (2017). On the Equivalence of Holographic and Complex Embeddings for Link Prediction
+[2] Katsuhiko Hayashi: “On the Equivalence of Holographic and Complex Embeddings for Link Prediction”, 2017; [http://arxiv.org/abs/1702.05563 arXiv:1702.05563].
 
-[3] Trouillon, Théo & Nickel, Maximilian. (2017). Complex and Holographic Embeddings of Knowledge Graphs: A Comparison. 
+[3] Théo Trouillon: “Complex and Holographic Embeddings of Knowledge Graphs: A Comparison”, 2017; [http://arxiv.org/abs/1707.01475 arXiv:1707.01475].
+
+[4] Yankai Lin, Zhiyuan Liu, Huanbo Luan, Maosong Sun, Siwei Rao: “Modeling Relation Paths for Representation Learning of Knowledge Bases”, 2015; [http://arxiv.org/abs/1506.00379 arXiv:1506.00379].
+
+[5] Maximilian Nickel: “Poincaré Embeddings for Learning Hierarchical Representations”, 2017; [http://arxiv.org/abs/1705.08039 arXiv:1705.08039].
