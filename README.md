@@ -82,7 +82,7 @@ Organization "US Navy" yields United States Air Force, US Army, United States Ar
 
 T-SNE on ages yields a curve that orders all of the ages sequentially.
 
-![age](images/age.png)
+
 
 PCA on age embeddings yields a similar curve, however one axis appears to correlate with the working population. Embedding names represent the type (2 for age) and the 3-year bucket, for example bucket 2_6 contains ages in [18,21) while bucket 2_10 contains ages [30,33). The below image indicates ages below 21 and above 66 off the plane shared by age buckets for [22, 66). It is noteworthy that this structure is entirely learned from triples with relations like, skill, location, employer, and school.
 
@@ -108,12 +108,12 @@ Poincare embeddings may be fruitful in helping filter obscure candidates and sel
 
 ## Reference
 
-[1] Maximilian Nickel, Lorenzo Rosasco: “Holographic Embeddings of Knowledge Graphs”, 2015; [http://arxiv.org/abs/1510.04935](arXiv:1510.04935).
+[1] Maximilian Nickel, Lorenzo Rosasco: “Holographic Embeddings of Knowledge Graphs”, 2015; [arXiv:1510.04935](http://arxiv.org/abs/1510.04935).
 
-[2] Katsuhiko Hayashi: “On the Equivalence of Holographic and Complex Embeddings for Link Prediction”, 2017; [http://arxiv.org/abs/1702.05563](arXiv:1702.05563.
+[2] Katsuhiko Hayashi: “On the Equivalence of Holographic and Complex Embeddings for Link Prediction”, 2017; [arXiv:1702.05563](http://arxiv.org/abs/1702.05563).
 
-[3] Théo Trouillon: “Complex and Holographic Embeddings of Knowledge Graphs: A Comparison”, 2017; [http://arxiv.org/abs/1707.01475](arXiv:1707.01475).
+[3] Théo Trouillon: “Complex and Holographic Embeddings of Knowledge Graphs: A Comparison”, 2017; [arXiv:1707.01475](http://arxiv.org/abs/1707.01475).
 
-[4] Yankai Lin, Zhiyuan Liu, Huanbo Luan, Maosong Sun, Siwei Rao: “Modeling Relation Paths for Representation Learning of Knowledge Bases”, 2015; [http://arxiv.org/abs/1506.00379](arXiv:1506.00379).
+[4] Yankai Lin, Zhiyuan Liu, Huanbo Luan, Maosong Sun, Siwei Rao: “Modeling Relation Paths for Representation Learning of Knowledge Bases”, 2015; [arXiv:1506.00379](http://arxiv.org/abs/1506.00379).
 
-[5] Maximilian Nickel: “Poincaré Embeddings for Learning Hierarchical Representations”, 2017; [http://arxiv.org/abs/1705.08039](arXiv:1705.08039).
+[5] Maximilian Nickel: “Poincaré Embeddings for Learning Hierarchical Representations”, 2017; [arXiv:1705.08039](http://arxiv.org/abs/1705.08039).
