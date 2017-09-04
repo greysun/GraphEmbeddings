@@ -100,6 +100,8 @@ Before moving to Holographic Embeddings in Tensorflow, most experiments were don
 
 HolE runs in roughly O(EN) where N is the number of triples and E the number of epochs before convergence. Growth in E with respect to N is unclear, however Holographic Embeddings typically converges on 10 million entities with 250 million triples within 8 hours on a 4-GPU (Tesla P100) server with 32 GB RAM. Computation is mostly memory intensive due to negative triple corruption, which samples large arrays of indexes. This is expecially expensive for sampling Person type entities, which dominate the set of entities (>99% of entities are of type Person).
 
+## Future
+
 While convergence time is not an issue, and optimistically won't be for billions of entities and potentially trillions of triples, filtering candidates remains an obstacle. It is not clear which candidates provide meaningful results -- often persons claim expertise in soft skill such as leadership or management, but these are not valuable bits of information, nor can they be objectively evaluated. This task is still a work in progress at this time (2017-9-3).
 
 ## Reference
