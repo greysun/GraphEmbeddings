@@ -9,7 +9,7 @@ For example, a search from the embedding representing the entity "University of 
 
 ![berkeley](images/berkeley.png)
 
-Often the exact association corresponding to the various dimensions of the embedding are ambiguous and not clearly defined, much like the learned neurons of a neural network. However, in this case, it appears the embedding has captured some information regarding University entities (the search could have yielded other Organizations, such as Macy's or IBM) as well as geographical locations (or possibly the locations of Persons affiliated with the entity).
+Often the exact association corresponding to the various dimensions of the embedding are ambiguous and not clearly defined, much like the learned neurons of a neural network. However, in this case, it appears the embedding has captured some information regarding University entities (the search could have yielded other Organizations, such as Macy's or IBM) as well as geographical locations (all of these are schools in California).
 
 ## Approach
 Holographic Embeddings employ circular correlation, which provides a fast vector heuristic for evaluating pair-wise entity similarity. It is similar to a matrix multiplication in that every cross-term contributes to the final result, however the result is squashed into a vector, trading some resolution for both memory-efficiency and runtime performance -- each epoch roughly O(td * log(d)) where t is the number of triples and d is the embedding-dimension. In practice, d is sufficiently small that performance resembles O(n).
@@ -18,11 +18,21 @@ Loss is scored from a pairwise hinge-loss where negative scores are evaluated us
 
 For more information, view this [presentation](https://docs.google.com/presentation/d/1fCfKGmkGyTmHqBWR2oGnS_muGvtZ_a1fb32lL_B5v3Q/edit?usp=sharing).
 
+## Tensorboard Graph
+
+### Model Architecture
+
+![graph](images/graph.png)
+
+### Evaluation and Loss
+
+![eval](images/eval.png)
+
 ## Tensorboard Demo: Search Associated Entities
 
 Tensordboard offers a fantastic embedding visualization tool, applying T-SNE or PCA in the browser on the first 100k embeddings. Here are few snippets of the UI and some example queries using Holographic Embeddings. This experiment began 2017-08-24 and ran over 3 days on 16GB RAM and a single GPU from 2014 on 1.2 million entities and 30 million triples.
 
-The unit ball with all available entities (first 100k limited by Tensorboard).
+The unit ball with all available (first 100k limited by Tensorboard) entities, colored by type.
 
 ![all entities](images/all.png)
 
@@ -64,7 +74,7 @@ T-SNE on ages yields a curve that orders all of the ages sequentially.
 
 ![age](images/age.png)
 
-PCA on age embeddings yields a similar curve, however one axis appears to correlate with the working population. Embedding names represent the type (2 for age) and the 3-year bucket, for example bucket 2_6 contains ages in [18,21) while bucket 2_10 contains ages [30,33). The below image indicates ages below 21 and above 66 off the plane shared by age buckets for [22, 66).
+PCA on age embeddings yields a similar curve, however one axis appears to correlate with the working population. Embedding names represent the type (2 for age) and the 3-year bucket, for example bucket 2_6 contains ages in [18,21) while bucket 2_10 contains ages [30,33). The below image indicates ages below 21 and above 66 off the plane shared by age buckets for [22, 66). It is noteworthy that this structure is entirely learned from triples with relations like, skill, location, employer, and school.
 
 ![age2](images/age2.png)
 
