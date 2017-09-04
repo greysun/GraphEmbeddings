@@ -20,13 +20,23 @@ For more information, view this [presentation](https://docs.google.com/presentat
 
 ## Tensorboard Graph
 
+### Evaluation and Loss
+
+In HolE, Evaluation is scored `E(h,t,r) = sigmoid(multiply(r, circularCorrelation(h, t)))` where `circularCorrelation(h, t) = ifft(multiply(conjugate(fft(h)), fft(t)))`. It is important to note that circular correlation is not a symmetric function and that `circularCorrelation(h, t) != circCorrelation(t, h)`, allowing the model to observe directional relations, such as "employer" and "employee".
+
+Loss is computed from a pair-wise hinge-loss against the generated corrupt triple. Given a positive triple `T`, we generate a corrupt triple `C`. If efficient, we could check whether `C` is among the valid triples, but this is currently ignored. Then the final training Loss is defined `L(T) = max(E(T) - E(C) + MARGIN, 0)`. In practice, margin is 0.2, borrowing the parameters defined in Maximilian Nickel's open source [scikit-kge](https://github.com/mnick/scikit-kge). It may be feasible to grow the margin as a function of time and maintain the best scoring model against the validation set.
+
 ### Model Architecture
+
+At initialization, embeddings are randomly generated for each entity and each relation in the input triple file, which consists entirely of positive triples. Two in-memory tables are generated for the purpose of generating corrupt triples: a mapping of indexes to their entity type and a mapping from type to an array entity indexes. To alleviate GPU memory pressure, the type to index map is subsampled for each batch -- this is likely a source of much data shuffling between GPU and CPU and there is much room for improvement.
+
+For each epoch, we train batches using the loss described above using stochastic gradient descent. We occasionally evaluate the current model against a hold out validation set. Unfortunately this score is very noisy due to the randomly generated corrupt triples. It is typically for the model to observe no progresss for some time before rapidly converging.
 
 ![graph](images/graph.png)
 
-### Evaluation and Loss
-
 ![eval](images/eval.png)
+
+See holE.py for implementation details.
 
 ## Tensorboard Demo: Search Associated Entities
 
