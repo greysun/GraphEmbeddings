@@ -506,11 +506,11 @@ def infer_triples():
     # TODO: get candidate tail type from training triples
     candidate_heads = data.type_to_ids['P']
     candidates = [
-                  InferenceCandidates([1], data.type_to_ids['1'], 2, FLAGS.infer_threshold),  # Gender
-                  InferenceCandidates([2], data.type_to_ids['2'], 3, FLAGS.infer_threshold),  # Age
-                  InferenceCandidates([6], data.type_to_ids['R'], 5, FLAGS.infer_threshold),  # Role
-                  InferenceCandidates([9], data.type_to_ids['S'], 10, 2*FLAGS.infer_threshold),  # Skill
-                  InferenceCandidates([12, 13, 14, 15, 16], data.type_to_ids['A'], 3, FLAGS.infer_threshold)  # Location
+                  # InferenceCandidates([1], data.type_to_ids['1'], 2, FLAGS.infer_threshold),  # Gender
+                  # InferenceCandidates([2], data.type_to_ids['2'], 3, FLAGS.infer_threshold),  # Age
+                  # InferenceCandidates([6], data.type_to_ids['R'], 5, FLAGS.infer_threshold),  # Role
+                  InferenceCandidates([9], [95], 1, FLAGS.infer_threshold)  # Skill, programming languages,
+                  # InferenceCandidates([12, 13, 14, 15, 16], data.type_to_ids['A'], 3, FLAGS.infer_threshold)  # Location
                   ]
 
     with tf.name_scope('inference'):
