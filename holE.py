@@ -569,7 +569,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--cpu', action='store_true', help='Disable GPU-only operations (namely FFT/iFFT).')
     parser.add_argument('--learning_rate', type=float, default=0.1, help='Initial learning rate.')
-    parser.add_argument('--learning_decay_steps', type=float, default=8, help='Learning rate decay steps (in epochs).')
+    parser.add_argument('--learning_decay_steps', type=float, default=32, help='Learning rate decay steps (in epochs).')
     parser.add_argument('--learning_decay_rate', type=float, default=0.5, help='Learning decay rate.')
     parser.add_argument('--batch_size', type=int, default=512, help='Batch size.')
     parser.add_argument('--num_epochs', type=int, default=1000, help='Number of training epochs.')
@@ -577,7 +577,7 @@ if __name__ == '__main__':
     parser.add_argument('--log_loss', action='store_true', help='Use logistic loss istead of pairwise ranking loss.')
     parser.add_argument('--negative_ratio', type=int, default=1, help='Number of negative labels sampled in log_loss.')
     parser.add_argument('--margin', type=float, default=0.2, help='Hinge loss margin.')
-    parser.add_argument('--padded_size', type=int, default=512,
+    parser.add_argument('--padded_size', type=int, default=1024,
                         help='The maximum number of entities to use for each type while sampling corrupt triples.')
     parser.add_argument('--output_dir', type=str, required=True, help='Tensorboard Summary directory.')
     parser.add_argument('--data_dir', type=str, required=True, help='Input data directory.')
@@ -585,7 +585,7 @@ if __name__ == '__main__':
     parser.add_argument('--resume_checkpoint', action='store_true', help='Resume training on the checkpoint model.')
     parser.add_argument('--infer', action='store_true', help='Infer new triples from the latest checkpoint model.')
     parser.add_argument('--infer_threshold', type=float, default=0.05, help='Max loss to save triples')
-    parser.add_argument('--min_mentions', type=int, default=10000,
+    parser.add_argument('--min_mentions', type=int, default=50000,
                         help='The minimum number of mentions for an entity to be a viable candidate in inference.')
 
     FLAGS, unparsed = parser.parse_known_args()
