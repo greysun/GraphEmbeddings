@@ -1,6 +1,23 @@
 # Tensorflow Implementation of Holographic Embeddings
 Author: BH
 
+## Table of Contents
+   * [Tensorflow Implementation of Holographic Embeddings](#tensorflow-implementation-of-holographic-embeddings)
+      * [Table of Contents](#table-of-contents)
+      * [Holographic Embeddings [1]](#holographic-embeddings-1)
+      * [Approach](#approach)
+      * [Implementation](#implementation)
+         * [Evaluation and Loss](#evaluation-and-loss)
+         * [Model Architecture](#model-architecture)
+      * [Demo: Associated Entities](#demo-associated-entities)
+         * [Skills](#skills)
+         * [Locations](#locations)
+         * [Others](#others)
+      * [Experiments](#experiments)
+      * [Scaling](#scaling)
+      * [Future](#future)
+      * [Reference](#reference)
+
 ## Holographic Embeddings [1]
 
 Holographic Embeddings are an approach to generating entity embeddings from a list of (head, tail, relation) triples like ("Jeff", "Amazon", "employer") and ("Zuck", "Palo Alto", "location"). Embeddings can be used as lossy, but memory-efficient inputs to other machine learning models, used directly in triple inference (aka Knowledge Base Completion or Link Prediction) by evaluating candidate triples, or to search for associated entities using k-nearest neighbors.
