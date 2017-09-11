@@ -500,6 +500,35 @@ class InferenceCandidates(object):
         self.min_confidence = min_confidence
 
 
+def save_embeddings():
+    data = init_inference_data()
+
+    with tf.name_scope('save_embeddings'):
+        embeddings = tf.get_variable('embeddings', [data.entity_count, FLAGS.embedding_dim],
+                                     initializer=tf.contrib.layers.xavier_initializer(uniform=False))
+        saver = tf.train.Saver()
+        with tf.Session() as sess:
+            init_op = tf.global_variables_initializer()
+            sess.run(init_op)
+            saver.restore(sess, FLAGS.output_dir + '/model.ckpt')
+
+            coord = tf.train.Coordinator()
+            threads = tf.train.start_queue_runners(sess=sess, coord=coord)
+            try:
+                for entity in xrange(data.entity_count):
+                    get_embedding_op = get_embedding('h', entity, embeddings)
+                    embedding = sess.run([get_embedding_op])
+                    diffbot_id = data.id_to_metadata[entity]
+                    print(diffbot_id, embedding)
+
+            except tf.errors.OutOfRangeError:
+                print('Done -- entity limit reached')
+            finally:
+                coord.request_stop()
+
+            coord.join(threads)
+
+
 def infer_triples():
     data = init_inference_data()
 
@@ -557,7 +586,9 @@ def infer_triples():
 
 def main(_):
     # TODO: refactor model in to object
-    if FLAGS.infer:
+    if FLAGS.save_embeddings:
+        save_embeddings()
+    elif FLAGS.infer:
         infer_triples()
     else:
         training_data = init_data()
@@ -583,6 +614,7 @@ if __name__ == '__main__':
     parser.add_argument('--data_dir', type=str, required=True, help='Input data directory.')
     parser.add_argument('--reader_threads', type=int, default=4, help='Number of training triple file readers.')
     parser.add_argument('--resume_checkpoint', action='store_true', help='Resume training on the checkpoint model.')
+    parser.add_argument('--save_embeddings', action='store_true', help='Output the embeddings to .')
     parser.add_argument('--infer', action='store_true', help='Infer new triples from the latest checkpoint model.')
     parser.add_argument('--infer_threshold', type=float, default=0.05, help='Max loss to save triples')
     parser.add_argument('--min_mentions', type=int, default=50000,
