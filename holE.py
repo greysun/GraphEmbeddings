@@ -150,11 +150,12 @@ def corrupt_relations(relation_count, triples):
 
 
 def corrupt_batch(type_to_ids, id_to_type, relation_count, triples):
+    corrupt_entities(type_to_ids, id_to_type, triples)
     # TODO: consider corrupting more entities as training time increases
-    should_corrupt_relations = tf.less(tf.random_uniform([], 0, 1.0), 0.2, 'should_corrupt_relations')
-    return tf.cond(should_corrupt_relations,
-                   lambda: corrupt_relations(relation_count, triples),
-                   lambda: corrupt_entities(type_to_ids, id_to_type, triples))
+    #should_corrupt_relations = tf.less(tf.random_uniform([], 0, 1.0), 0.2, 'should_corrupt_relations')
+    #return tf.cond(should_corrupt_relations,
+    #               lambda: corrupt_relations(relation_count, triples),
+    #               lambda: corrupt_entities(type_to_ids, id_to_type, triples))
 
 
 def get_embedding(layer_name, entity_ids, embeddings):
