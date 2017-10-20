@@ -150,7 +150,7 @@ def corrupt_relations(relation_count, triples):
 
 
 def corrupt_batch(type_to_ids, id_to_type, relation_count, triples):
-    corrupt_entities(type_to_ids, id_to_type, triples)
+    return corrupt_entities(type_to_ids, id_to_type, triples)
     # TODO: consider corrupting more entities as training time increases
     #should_corrupt_relations = tf.less(tf.random_uniform([], 0, 1.0), 0.2, 'should_corrupt_relations')
     #return tf.cond(should_corrupt_relations,
@@ -161,8 +161,9 @@ def corrupt_batch(type_to_ids, id_to_type, relation_count, triples):
 def get_embedding(layer_name, entity_ids, embeddings):
     entity_embeddings = tf.reshape(tf.nn.embedding_lookup(embeddings, entity_ids, max_norm=1),
                                    [-1, FLAGS.embedding_dim])
-    embeddings = tf.slice(entity_embeddings, [0, 0], [-1, FLAGS.embedding_dim])
-    return tf.reshape(embeddings, [-1, FLAGS.embedding_dim], name=layer_name)
+    real_embeddings = tf.slice(entity_embeddings, [0, 0], [-1, FLAGS.embedding_dim/2])
+    imag_embeddings = tf.slice(entity_embeddings, [0, FLAGS.embedding_dim/2], [-1, FLAGS.embedding_dim/2])
+    return tf.reshape(tf.complex(real_embeddings, imag_embeddings), [-1, FLAGS.embedding_dim], name=layer_name)
 
 
 def reduce_eval(batch_tensor):
@@ -170,8 +171,7 @@ def reduce_eval(batch_tensor):
 
 
 def circular_correlation(h, t):
-    # these ops are GPU only!
-    return tf.spectral.irfft(tf.multiply(tf.conj(tf.spectral.rfft(h)), tf.spectral.rfft(t)))
+    return tf.real(tf.multiply(tf.conj(tf.spectral.rfft(h)), tf.spectral.rfft(t)))
 
 
 def evaluate_triples(triple_batch, embeddings, label=None):
@@ -187,11 +187,7 @@ def evaluate_triples(triple_batch, embeddings, label=None):
     # Compute loss
     with tf.name_scope('eval'):
         # TODO: soft-regularization (instead of max_norm=1)
-        if FLAGS.cpu:
-            # TransE
-            score = head_embeddings + relation_embeddings - tail_embeddings
-        else:
-            score = tf.multiply(relation_embeddings, circular_correlation(head_embeddings, tail_embeddings))
+        score = tf.multiply(head_embeddings, tf.multiply(relation_embeddings, tf.conj(tail_embeddings)))
 
         if FLAGS.log_loss and label:
             score = tf.scalar_mul(-label, score)
@@ -213,8 +209,7 @@ def evaluate_batch(triple_batch, embeddings, type_to_ids_table, id_to_type_table
         with (tf.name_scope('corrupt')):
             for i in range(FLAGS.negative_ratio):
                 with tf.name_scope('c' + str(i)):
-                    corrupt_triples = corrupt_batch(type_to_ids_table, id_to_type_table,
-                                                    relation_count, triple_batch)
+                    corrupt_triples = corrupt_batch(type_to_ids_table, id_to_type_table, relation_count, triple_batch)
                     corrupt_loss = evaluate_triples(corrupt_triples, embeddings, -1)
                     losses.append(corrupt_loss)
 
@@ -599,7 +594,6 @@ def main(_):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--cpu', action='store_true', help='Disable GPU-only operations (namely FFT/iFFT).')
     parser.add_argument('--learning_rate', type=float, default=0.1, help='Initial learning rate.')
     parser.add_argument('--learning_decay_steps', type=float, default=32, help='Learning rate decay steps (in epochs).')
     parser.add_argument('--learning_decay_rate', type=float, default=0.5, help='Learning decay rate.')
