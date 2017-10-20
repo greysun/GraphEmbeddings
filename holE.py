@@ -189,9 +189,9 @@ def evaluate_triples(triple_batch, embeddings, label=None):
         # TODO: soft-regularization (instead of max_norm=1)
         score = tf.multiply(head_embeddings, tf.multiply(relation_embeddings, tf.conj(tail_embeddings)))
 
-        if FLAGS.log_loss and label:
+        if FLAGS.log_loss and label is not None:
             score = tf.scalar_mul(-label, score)
-            loss = tf.log(1. + tf.exp(score))
+            loss = tf.log(1. + tf.exp(score)) + FLAGS.L2_REGULARIZATION * tf.nn.l2_loss(embeddings)
         else:
             loss = reduce_eval(score)
 
@@ -601,6 +601,7 @@ if __name__ == '__main__':
     parser.add_argument('--num_epochs', type=int, default=1000, help='Number of training epochs.')
     parser.add_argument('--embedding_dim', type=int, default=128, help='Embedding dimension.')
     parser.add_argument('--log_loss', action='store_true', help='Use logistic loss istead of pairwise ranking loss.')
+    parser.add_argument('--l2_regularization', type=float, default=0.1, help='L2 regularization weight (log loss only).')
     parser.add_argument('--negative_ratio', type=int, default=1, help='Number of negative labels sampled in log_loss.')
     parser.add_argument('--margin', type=float, default=0.2, help='Hinge loss margin.')
     parser.add_argument('--padded_size', type=int, default=1024,
