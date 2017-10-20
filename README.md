@@ -1,4 +1,4 @@
-# Tensorflow Implementation of Holographic Embeddings
+# Tensorflow Implementation of Complex (Holographic) Embeddings
 Author: BH
 
 ## Table of Contents
