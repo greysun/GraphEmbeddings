@@ -161,9 +161,11 @@ def corrupt_batch(type_to_ids, id_to_type, relation_count, triples):
 def get_embedding(layer_name, entity_ids, embeddings):
     entity_embeddings = tf.reshape(tf.nn.embedding_lookup(embeddings, entity_ids, max_norm=1),
                                    [-1, FLAGS.embedding_dim])
-    real_embeddings = tf.slice(entity_embeddings, [0, 0], [-1, FLAGS.embedding_dim/2])
-    imag_embeddings = tf.slice(entity_embeddings, [0, FLAGS.embedding_dim/2], [-1, FLAGS.embedding_dim/2])
-    return tf.reshape(tf.complex(real_embeddings, imag_embeddings), [-1, FLAGS.embedding_dim], name=layer_name)
+    real_embeddings = tf.slice(entity_embeddings, [0, 0], [-1, FLAGS.embedding_dim//2])
+    imag_embeddings = tf.slice(entity_embeddings, [0, FLAGS.embedding_dim//2], [-1, FLAGS.embedding_dim//2])
+    complex_embeddings = tf.reshape(tf.complex(real_embeddings, imag_embeddings),
+                                    [-1, FLAGS.embedding_dim//2], name=layer_name)
+    return complex_embeddings
 
 
 def reduce_eval(batch_tensor):
@@ -176,24 +178,24 @@ def circular_correlation(h, t):
 
 def evaluate_triples(triple_batch, embeddings, label=None):
     # Load embeddings
-    with tf.device('/cpu:0'):
-        head_column = tf.slice(triple_batch, [0, 0], [-1, 1], name='h_id')
-        head_embeddings = get_embedding('h', head_column, embeddings)
-        tail_column = tf.slice(triple_batch, [0, 1], [-1, 1], name='t_id')
-        tail_embeddings = get_embedding('t', tail_column, embeddings)
-        relation_column = tf.slice(triple_batch, [0, 2], [-1, 1], name='r_id')
-        relation_embeddings = get_embedding('r', relation_column, embeddings)
+    head_column = tf.slice(triple_batch, [0, 0], [-1, 1], name='h_id')
+    head_embeddings = get_embedding('h', head_column, embeddings)
+    tail_column = tf.slice(triple_batch, [0, 1], [-1, 1], name='t_id')
+    tail_embeddings = get_embedding('t', tail_column, embeddings)
+    relation_column = tf.slice(triple_batch, [0, 2], [-1, 1], name='r_id')
+    relation_embeddings = get_embedding('r', relation_column, embeddings)
 
     # Compute loss
     with tf.name_scope('eval'):
         # TODO: soft-regularization (instead of max_norm=1)
         score = tf.multiply(head_embeddings, tf.multiply(relation_embeddings, tf.conj(tail_embeddings)))
+        score = tf.reduce_sum(tf.real(score), 1, keep_dims=True)
 
         if FLAGS.log_loss and label is not None:
             score = tf.scalar_mul(-label, score)
-            loss = tf.log(1. + tf.exp(score)) + FLAGS.L2_REGULARIZATION * tf.nn.l2_loss(embeddings)
+            loss = tf.log(1. + tf.exp(score)) + FLAGS.l2_regularization * tf.nn.l2_loss(embeddings)
         else:
-            loss = reduce_eval(score)
+            loss = tf.sigmoid(score)
 
         summarize(loss)
 
