@@ -20,7 +20,7 @@ Author: BH
 
 ## Holographic Embeddings [1]
 
-Holographic Embeddings are an approach to generating entity embeddings from a list of (head, tail, relation) triples like ("Jeff", "Amazon", "employer") and ("Zuck", "Palo Alto", "location"). Embeddings can be used as lossy, but memory-efficient inputs to other machine learning models, used directly in triple inference (aka Knowledge Base Completion or Link Prediction) by evaluating candidate triples, or to search for associated entities using k-nearest neighbors.
+Holographic Embeddings are an approach to generating entity embeddings from a list of (head, tail, relation) triples like ("Jeff", "Amazon", "employer") and ("Zuck", "Palo Alto", "location"). Embeddings can be used as lossy, but memory-efficient inputs to other machine learning models, used directly in triple inference (aka Knowledge Base Completion or Link Prediction) by evaluating the likelihood of candidate triples, or to search for associated entities using k-nearest neighbors.
 
 For example, a search from the embedding representing the entity "University of California, Berkeley" yields the associated entities UC Irvine, Stanford University, USC, UCLA, and UCSD.
 
