@@ -45,7 +45,7 @@ Loss is computed from a pair-wise hinge-loss against the generated corrupt tripl
 
 ### Model Architecture
 
-At initialization, embeddings are randomly generated for each entity and each relation in the input triple file, which consists entirely of positive triples, in other words triples that are all factually true. Two in-memory tables are generated for the purpose of generating corrupt triples (triples that are unlikely to be true, but not necessarily false): a mapping of indexes to their entity type and a mapping from type to an array entity indexes. To alleviate GPU memory pressure, the type to index map is subsampled for each batch -- this is likely a source of much data shuffling between GPU and CPU and there is certainly room for improvement.
+At initialization, embeddings are randomly generated for each entity and each relation in the input triple file, which consists entirely of positive triples (triples that are all factually true). Two in-memory tables are generated for the purpose of generating corrupt triples (triples that are unlikely to be true, but not necessarily false): a mapping of indexes to their entity type and a mapping from type to an array entity indexes. To alleviate GPU memory pressure, the type to index map is subsampled for each batch -- this is likely a source of much data shuffling between GPU and CPU and there is certainly room for improvement.
 
 For each epoch, we train batches using the loss described above using stochastic gradient descent. We occasionally evaluate the current model against a hold out validation set. Unfortunately this score is very noisy due to the randomly generated corrupt triples. It is typical for the model to observe no progresss for some time before rapidly converging.
 
