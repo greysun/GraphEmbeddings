@@ -20,7 +20,7 @@ Author: BH
 
 ## Holographic Embeddings [1]
 
-Holographic Embeddings are an approach to generating entity embeddings from a list of (head, tail, relation) triples like ("Jeff", "Amazon", "employer") and ("Zuck", "Palo Alto", "location"). Embeddings can be used as lossy, but memory-efficient inputs to other machine learning models, used directly in triple inference (aka Knowledge Base Completion or Link Prediction) by evaluating the likelihood of candidate triples, or to search for associated entities using k-nearest neighbors.
+Holographic Embeddings are an approach to generating entity embeddings from a list of `(head, tail, relation)` triples like `("Jeff", "Amazon", "employer")` and `("Zuck", "Palo Alto", "location")`. Embeddings can be used as lossy, but memory-efficient inputs to other machine learning models, used directly in triple inference (aka Knowledge Base Completion or Link Prediction) by evaluating the likelihood of candidate triples, or to search for associated entities using k-nearest neighbors.
 
 For example, a search from the embedding representing the entity "University of California, Berkeley" yields the associated entities UC Irvine, Stanford University, USC, UCLA, and UCSD.
 
@@ -31,7 +31,7 @@ Often the exact association corresponding to the various dimensions of the embed
 ## Approach
 Holographic Embeddings employ circular correlation, which provides a fast vector heuristic for evaluating pair-wise entity similarity. It is similar to a matrix multiplication in that every cross-term contributes to the final result, however the result is squashed into a vector, trading some resolution for both memory-efficiency and runtime performance -- each epoch roughly O(td * log(d)) where t is the number of triples and d is the embedding-dimension. In practice, d is sufficiently small that performance resembles O(n).
 
-Loss is scored from a pairwise hinge-loss where negative scores are evaluated using a *type-safe corruption*. Each positive triple provided is *corrupt* such that one entry in (head, tail, relation) is randomly modified. For example, ("Jeff", "Amazon", "employer") may yield corrupt triples like ("Jeff", "Facebook", "employer"), ("Nancy", "Amazon", "employer"), or ("Jeff", "Amazon", "location"). Corruption is type-safe, such that corruption will not generate triples like ("Jeff", "Palo Alto", "skill") because the city of Palo Alto is a location and not a skill entity.
+Loss is scored from a pairwise hinge-loss where negative scores are evaluated using a *type-safe corruption*. Each positive triple provided is *corrupt* such that one entry in (head, tail, relation) is randomly modified. For example, `("Jeff", "Amazon", "employer")` may yield corrupt triples like `("Jeff", "Facebook", "employer")`, `("Nancy", "Amazon", "employer")`, or `("Jeff", "Amazon", "location")`. Corruption is type-safe, such that corruption will not generate triples like `("Jeff", "Palo Alto", "skill")` because the city of Palo Alto is a location and not a skill entity.
 
 For more information, view this [presentation](https://docs.google.com/presentation/d/1fCfKGmkGyTmHqBWR2oGnS_muGvtZ_a1fb32lL_B5v3Q/edit?usp=sharing).
 
@@ -90,6 +90,8 @@ Location "Fairfax County" yields other counties in the United States. Why these 
 Location "Indonesia" yields People's Republic of China, Malaysia, Egypt, Turkey, Switzerland.
 
 ![Indonesia](images/indo.png)
+
+It is noteworthy that these locations are not typed by City/County/Country -- these distinctions are learned by the model embeddings via a location hierarchy using relations like `("California", "United States", "locatedIn")`. 
 
 ### Others
 
